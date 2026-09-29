@@ -1,0 +1,57 @@
+name: Run Docking
+
+on:
+  workflow_dispatch:
+    inputs:
+      pdb_id:
+        description: 'PDB ID (e.g. 1HPV, 8VBU, 3TE4)'
+        required: true
+        type: string
+      ligand_resname:
+        description: 'Crystal ligand resname (e.g. 478, 1S6, ACO)'
+        required: true
+        type: string
+      box_size:
+        description: 'Grid box size in Å — 25 drug / 35 large ligand'
+        required: false
+        default: '25'
+        type: string
+      exhaustiveness:
+        description: 'Vina search depth — 8 fast / 16 standard / 32 accurate'
+        required: false
+        default: '16'
+        type: string
+
+jobs:
+  docking:
+    name: Dock ${{ inputs.pdb_id }} / ${{ inputs.ligand_resname }}
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 45
+
+    steps:
+      - name: Pull latest pipeline code
+        run: |
+          cd /home/jong/pyrx/pyrx
+          git pull --ff-only
+
+      - name: Run PyRx pipeline
+        run: |
+          conda run -n pyrx \
+            python /home/jong/pyrx/pyrx/scripts/run_pipeline.py \
+              --pdb            "${{ inputs.pdb_id }}" \
+              --ligand         "${{ inputs.ligand_resname }}" \
+              --box            "${{ inputs.box_size }}" \
+              --exhaustiveness "${{ inputs.exhaustiveness }}" \
+              --out            "/tmp/pyrx-job-${{ github.run_id }}"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: docking-${{ inputs.pdb_id }}-${{ inputs.ligand_resname }}-run${{ github.run_id }}
+          path: /tmp/pyrx-job-${{ github.run_id }}/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Cleanup temp files
+        if: always()
+        run: rm -rf /tmp/pyrx-job-${{ github.run_id }}
