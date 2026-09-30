@@ -92,11 +92,6 @@
   .login-error { color: var(--error); font-size: 13px; margin-top: 8px; min-height: 18px; text-align: center; }
   .login-footer { font-size: 11px; color: var(--muted); text-align: center; margin-top: 16px; }
 
-  /* Settings */
-  #settingsPanel { display: none; background: var(--code-bg); border: 1px solid var(--border);
-                   border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; }
-  #settingsPanel.open { display: block; }
-
   /* Status */
   #statusCard { display: none; }
   .status-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
@@ -199,25 +194,6 @@
 </header>
 
 <div class="main">
-
-  <!-- Settings -->
-  <div style="text-align:right; margin-bottom:-12px">
-    <button class="btn-sm" onclick="toggleSettings()">⚙ API Server</button>
-  </div>
-  <div id="settingsPanel">
-    <div class="field">
-      <label>API Server URL</label>
-      <div style="display:flex;gap:8px">
-        <input id="apiUrlInput" placeholder="https://140.114.98.97:8443" style="flex:1">
-        <button class="btn-sm" onclick="saveApiUrl()">Save</button>
-      </div>
-      <span class="hint">Backend server address. After saving, click "Test Connection" to verify.</span>
-    </div>
-    <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-      <button class="btn-sm" onclick="testConnection()">Test Connection</button>
-      <span id="connStatus" style="font-size:12px"></span>
-    </div>
-  </div>
 
   <!-- Docking form -->
   <div class="card">
@@ -372,9 +348,8 @@ const LS = {
   remove: k => localStorage.removeItem(k)
 };
 
-function getApiBase() {
-  return (LS.get('pyrx_api_url') || '').replace(/\/$/, '');
-}
+const API_BASE = 'https://140.114.98.97:8443';
+function getApiBase() { return API_BASE; }
 function getToken() { return LS.get('pyrx_token') || ''; }
 
 // ── API fetch helper ────────────────────────────────────
@@ -410,15 +385,6 @@ async function doLogin() {
   const btn      = document.getElementById('loginBtn');
   errEl.textContent = '';
   btn.disabled = true; btn.textContent = 'Signing in…';
-
-  const base = getApiBase();
-  if (!base) {
-    // If no API URL set yet, show settings first
-    document.getElementById('loginOverlay').hidden = true;
-    document.getElementById('app').hidden = false;
-    toggleSettings();
-    return;
-  }
 
   try {
     const resp = await fetch(base + '/api/login', {
@@ -459,38 +425,14 @@ function renderUserBadge(name) {
 
 // ── Settings ───────────────────────────────────────────
 window.addEventListener('load', () => {
-  const url  = LS.get('pyrx_api_url') || '';
   const user = LS.get('pyrx_user');
   const tok  = LS.get('pyrx_token');
-  if (url) document.getElementById('apiUrlInput').value = url;
   if (tok && user) {
     document.getElementById('loginOverlay').hidden = true;
     document.getElementById('app').hidden = false;
     renderUserBadge(user);
   }
 });
-
-function toggleSettings() {
-  document.getElementById('settingsPanel').classList.toggle('open');
-}
-function saveApiUrl() {
-  const v = document.getElementById('apiUrlInput').value.trim().replace(/\/$/, '');
-  LS.set('pyrx_api_url', v);
-  document.getElementById('connStatus').textContent = 'Saved.';
-}
-async function testConnection() {
-  const s = document.getElementById('connStatus');
-  s.textContent = 'Testing…'; s.style.color = 'var(--muted)';
-  try {
-    const r = await fetch(getApiBase() + '/api/health');
-    const d = await r.json();
-    s.textContent = `✓ Connected (GH_TOKEN: ${d.gh_configured ? 'yes' : 'missing'})`;
-    s.style.color = 'var(--success)';
-  } catch (e) {
-    s.textContent = `✗ ${e.message}`;
-    s.style.color = 'var(--error)';
-  }
-}
 
 // ── Form helpers ───────────────────────────────────────
 function toggleAdv() {
