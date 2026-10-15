@@ -348,7 +348,7 @@ const LS = {
   remove: k => localStorage.removeItem(k)
 };
 
-const API_BASE = 'https://docs-generating-artistic-vinyl.trycloudflare.com';
+const API_BASE = 'https://zero-condiment-lisp.ngrok-free.dev';
 function getApiBase() { return API_BASE; }
 function getToken() { return LS.get('pyrx_token') || ''; }
 
@@ -361,6 +361,7 @@ async function apiFetch(path, opts = {}) {
     ...opts,
     headers: {
       'Content-Type':  'application/json',
+      'ngrok-skip-browser-warning': 'true',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(opts.headers || {})
     }
@@ -389,7 +390,7 @@ async function doLogin() {
   try {
     const resp = await fetch(base + '/api/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ username, password })
     });
     if (!resp.ok) {
