@@ -387,6 +387,7 @@ async function doLogin() {
   errEl.textContent = '';
   btn.disabled = true; btn.textContent = 'Signing in…';
 
+  const base = getApiBase();
   try {
     const resp = await fetch(base + '/api/login', {
       method: 'POST',
