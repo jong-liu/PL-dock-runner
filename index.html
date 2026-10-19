@@ -211,6 +211,36 @@
   .login-footer { font-size: 12px; color: var(--muted); text-align: center; margin-top: 14px; }
   .login-footer a { color: var(--accent); cursor: pointer; text-decoration: none; }
   .login-footer a:hover { text-decoration: underline; }
+
+  /* Timeline */
+  .tl-wrap { display: flex; flex-direction: column; }
+  .tl-entry { display: flex; gap: 10px; position: relative; padding-bottom: 14px; }
+  .tl-entry:last-child { padding-bottom: 0; }
+  .tl-entry::before { content: ''; position: absolute; left: 7px; top: 16px;
+                      bottom: 0; width: 2px; background: var(--border); }
+  .tl-entry:last-child::before { display: none; }
+  .tl-dot { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
+            border: 2px solid var(--border); background: var(--surface); position: relative; z-index: 1; }
+  .tl-dot.done { background: var(--success); border-color: var(--success); }
+  .tl-dot.run  { background: var(--warn);    border-color: var(--warn); }
+  .tl-dot.fail { background: var(--error);   border-color: var(--error); }
+  .tl-body { min-width: 0; flex: 1; }
+  .tl-time  { font-size: 10px; color: var(--muted); line-height: 1.3; margin-bottom: 1px; }
+  .tl-label { font-size: 12px; font-weight: 600; line-height: 1.4; }
+  .tl-sub   { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: monospace;
+              background: var(--code-bg); border-radius: 4px; padding: 4px 6px;
+              border: 1px solid var(--border); overflow: hidden; }
+  .tl-sub div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.6; }
+
+  /* Status two-column layout */
+  .status-columns { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .status-timeline { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border);
+                     padding-right: 16px; }
+  .status-main { flex: 1; min-width: 0; }
+  @media (max-width: 560px) {
+    .status-timeline { width: 100%; border-right: none; border-bottom: 1px solid var(--border);
+                       padding-right: 0; padding-bottom: 14px; }
+  }
 </style>
 
 <!-- ── Login overlay ── -->
@@ -360,10 +390,22 @@
   <!-- Status & results -->
   <div class="card" id="statusCard">
     <h2>Job Status</h2>
-    <div class="status-row">
-      <div class="spinner" id="spinner"></div>
-      <div id="statusText" style="font-size:14px"></div>
-    </div>
+    <div class="status-columns">
+
+      <!-- Left: Timeline -->
+      <div class="status-timeline">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.4px;margin-bottom:10px">Timeline</div>
+        <div id="timelineLog" class="tl-wrap">
+          <div style="color:var(--muted);font-size:11px">Waiting for job…</div>
+        </div>
+      </div>
+
+      <!-- Right: Badge + Results -->
+      <div class="status-main">
+        <div class="status-row">
+          <div class="spinner" id="spinner"></div>
+          <div id="statusText" style="font-size:14px"></div>
+        </div>
 
     <div id="resultsSection">
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
@@ -409,6 +451,8 @@
       </div>
 
     </div><!-- /resultsSection -->
+      </div><!-- /status-main -->
+    </div><!-- /status-columns -->
   </div>
 
   <!-- Examples -->
@@ -445,6 +489,17 @@
       </tbody>
     </table>
     <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Click a row to pre-fill the form.</p>
+  </div>
+
+  <!-- My Jobs -->
+  <div class="card" id="myJobsCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">My Jobs <span id="myJobsCount" style="font-size:12px;color:var(--muted);font-weight:400"></span></h2>
+      <button class="btn-sm" onclick="loadJobHistory()">↺ Refresh</button>
+    </div>
+    <div id="jobHistoryContent">
+      <p style="color:var(--muted);font-size:13px;text-align:center;padding:12px 0">No jobs yet — submit your first docking job above.</p>
+    </div>
   </div>
 
   <!-- Admin Panel (admin only) -->
@@ -549,11 +604,16 @@ async function doLogin() {
 }
 
 function doLogout() {
+  clearInterval(pollTimer);
+  currentJobId = null;
   LS.remove('pyrx_token'); LS.remove('pyrx_user');
   document.getElementById('app').hidden = true;
   document.getElementById('loginOverlay').hidden = false;
   document.getElementById('loginError').textContent = '';
   document.getElementById('loginPass').value = '';
+  document.getElementById('statusCard').style.display = 'none';
+  document.getElementById('jobHistoryContent').innerHTML = '';
+  document.getElementById('myJobsCount').textContent = '';
 }
 
 function renderUserBadge(name, role) {
@@ -564,6 +624,7 @@ function renderUserBadge(name, role) {
   const panel = document.getElementById('adminPanel');
   if (role === 'admin') { panel.hidden = false; loadAdminPanel(); }
   else                  { panel.hidden = true; }
+  loadJobHistory();
 }
 
 // ── Settings ───────────────────────────────────────────
@@ -708,6 +769,7 @@ async function submitJob() {
     const data = await raw.json();
     currentJobId = data.job_id;
     setBadge('queued', `Job queued: ${label}`);
+    renderTimeline(Date.now() / 1000, [], []);
     startPolling();
   } catch (e) {
     setBadge('failure', e.message);
@@ -730,17 +792,29 @@ async function pollStatus() {
     const s = data.status, c = data.conclusion;
     const label = c ? `${capitalize(s)} — ${capitalize(c)}` : capitalize(s);
 
+    // Fetch progress log (only while running — file is cleaned up after)
+    let progressLines = [];
+    if (data.run_id && s !== 'completed') {
+      try {
+        const pr = await apiFetch(`/api/progress/${currentJobId}`);
+        progressLines = (await pr.json()).lines || [];
+      } catch { /* ignore */ }
+    }
+    renderTimeline(data.dispatched_at, data.steps || [], progressLines);
+
     if (s === 'queued' || (!c && s !== 'completed')) {
       setBadge(s === 'queued' ? 'queued' : 'running', label);
     } else if (s === 'completed' && c === 'success') {
       clearInterval(pollTimer);
       setBadge('success', `Complete — ${data.pdb_id} / ${data.ligand}`);
       document.getElementById('spinner').style.display = 'none';
+      loadJobHistory();
       await showResults(data);
     } else {
       clearInterval(pollTimer);
       setBadge('failure', `${capitalize(c || s)} — check GitHub Actions log`);
       document.getElementById('spinner').style.display = 'none';
+      loadJobHistory();
     }
   } catch (e) {
     setBadge('failure', e.message);
@@ -931,6 +1005,167 @@ function takeSnapshot() {
   const a = document.createElement('a');
   a.href = url; a.download = 'docking-view.png';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+// ── Timeline renderer ──────────────────────────────────
+function renderTimeline(dispatchedAt, steps, progressLines) {
+  const logEl = document.getElementById('timelineLog');
+  if (!logEl) return;
+
+  const fmt = ts => {
+    if (!ts) return '';
+    try {
+      const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mi = String(d.getMinutes()).padStart(2,'0');
+      const ss = String(d.getSeconds()).padStart(2,'0');
+      return `${mm}/${dd} ${hh}:${mi}:${ss}`;
+    } catch { return ''; }
+  };
+
+  const STEP_LABELS = {
+    'Pull latest pipeline code': 'Pull pipeline',
+    'Run PyRx pipeline':         'Run docking',
+    'Upload results':            'Upload results',
+    'Cleanup temp files':        'Cleanup',
+  };
+  const SKIP_STEPS = new Set(['Set up job','Complete job','Post checkout']);
+
+  const entries = [];
+  if (dispatchedAt) {
+    entries.push({ time: fmt(dispatchedAt), label: 'Job Queued', state: 'done' });
+  }
+  for (const step of steps) {
+    if (SKIP_STEPS.has(step.name)) continue;
+    let state = 'pending';
+    if (step.status === 'completed') state = step.conclusion === 'success' ? 'done' : 'fail';
+    else if (step.status === 'in_progress') state = 'run';
+    entries.push({
+      time: fmt(step.started_at || ''),
+      label: STEP_LABELS[step.name] || step.name,
+      state,
+    });
+  }
+
+  const subLines = (progressLines || []).slice(-5);
+  const isLast   = i => i === entries.length - 1 && !subLines.length;
+
+  let html = entries.map((e, i) =>
+    `<div class="tl-entry">
+       <div class="tl-dot ${e.state === 'done' ? 'done' : e.state === 'run' ? 'run' : e.state === 'fail' ? 'fail' : ''}"></div>
+       <div class="tl-body">
+         ${e.time ? `<div class="tl-time">${e.time}</div>` : ''}
+         <div class="tl-label">${e.label}</div>
+       </div>
+     </div>`
+  ).join('');
+
+  if (subLines.length) {
+    html += `<div style="padding-left:26px;margin-top:-8px;padding-bottom:4px">
+      <div class="tl-sub">${subLines.map(l => `<div>${l}</div>`).join('')}</div>
+    </div>`;
+  }
+
+  logEl.innerHTML = html || '<div style="color:var(--muted);font-size:11px">Waiting for job…</div>';
+}
+
+// ── Job history ────────────────────────────────────────
+async function loadJobHistory() {
+  const content = document.getElementById('jobHistoryContent');
+  if (!content || !getToken()) return;
+  try {
+    const resp       = await apiFetch('/api/jobs');
+    const { jobs }   = await resp.json();
+    const countEl    = document.getElementById('myJobsCount');
+    if (countEl) countEl.textContent = jobs.length ? `(${jobs.length})` : '';
+
+    if (!jobs.length) {
+      content.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">No jobs yet — submit your first docking job above.</p>';
+      return;
+    }
+
+    const rows = jobs.map(j => {
+      const d    = new Date(j.dispatched_at * 1000);
+      const date = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} `
+                 + `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      const statusBadge = !j.run_id
+        ? '<span class="badge badge-queued">Queued</span>'
+        : j.conclusion === 'success'  ? '<span class="badge badge-success">✓ Done</span>'
+        : j.conclusion === 'failure'  ? '<span class="badge badge-failure">✗ Failed</span>'
+        : j.conclusion === 'cancelled'? '<span class="badge badge-failure">Cancelled</span>'
+        : '<span class="badge badge-running">Running</span>';
+      const score = j.best_score != null ? `${j.best_score.toFixed(2)} kcal/mol` : '—';
+      const active = j.job_id === currentJobId
+        ? 'style="background:color-mix(in srgb,var(--accent) 8%,transparent)"' : '';
+      return `<tr class="ex-row" ${active}
+                onclick="loadJobResult('${j.job_id}','${j.pdb_id}','${j.ligand}')">
+        <td style="font-family:monospace;font-size:12px;font-weight:600">${j.pdb_id||'?'} / ${j.ligand||'?'}</td>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap">${date}</td>
+        <td>${statusBadge}</td>
+        <td style="font-weight:600;color:var(--primary);font-size:13px">${score}</td>
+        <td style="color:var(--accent);font-size:11px">View →</td>
+      </tr>`;
+    }).join('');
+
+    content.innerHTML =
+      `<div style="overflow-x:auto">
+         <table class="user-table">
+           <thead><tr>
+             <th>Receptor / Ligand</th><th>Date</th><th>Status</th>
+             <th>Best Score</th><th></th>
+           </tr></thead>
+           <tbody>${rows}</tbody>
+         </table>
+       </div>`;
+  } catch (e) {
+    if (content) content.innerHTML =
+      `<div class="alert alert-error">Could not load jobs: ${e.message}</div>`;
+  }
+}
+
+async function loadJobResult(jobId, pdbId, ligand) {
+  currentJobId = jobId;
+  clearInterval(pollTimer);
+  const card = document.getElementById('statusCard');
+  card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  document.getElementById('spinner').style.display = 'none';
+  document.getElementById('resultsSection').style.display = 'none';
+  document.getElementById('timelineLog').innerHTML =
+    '<div style="color:var(--muted);font-size:11px">Loading…</div>';
+  setBadge('queued', `Loading ${pdbId} / ${ligand}…`);
+
+  try {
+    const resp = await apiFetch(`/api/status/${jobId}`);
+    const data = await resp.json();
+
+    let progressLines = [];
+    if (data.run_id) {
+      try { progressLines = (await (await apiFetch(`/api/progress/${jobId}`)).json()).lines || []; }
+      catch { /* no log available */ }
+    }
+    renderTimeline(data.dispatched_at, data.steps || [], progressLines);
+
+    if (data.status === 'completed' && data.conclusion === 'success') {
+      setBadge('success', `Complete — ${pdbId} / ${ligand}`);
+      await showResults(data);
+    } else if (data.status === 'completed') {
+      setBadge('failure', `${capitalize(data.conclusion || 'failed')} — ${pdbId} / ${ligand}`);
+    } else if (!data.run_id || data.status === 'queued') {
+      setBadge('queued', `Queued — ${pdbId} / ${ligand}`);
+      document.getElementById('spinner').style.display = 'block';
+      startPolling();
+    } else {
+      setBadge('running', `Running — ${pdbId} / ${ligand}`);
+      document.getElementById('spinner').style.display = 'block';
+      startPolling();
+    }
+  } catch (e) {
+    setBadge('failure', `Error: ${e.message}`);
+  }
 }
 
 // ── Register / Login view toggle ───────────────────────
