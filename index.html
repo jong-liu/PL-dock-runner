@@ -184,22 +184,83 @@
 
   footer { text-align: center; font-size: 11px; color: var(--muted); padding: 28px 0 40px; }
   footer a { color: var(--muted); }
+
+  /* Admin panel */
+  .admin-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
+  .admin-tab  { background: none; border: none; padding: 8px 18px; font-size: 13px; font-weight: 600;
+                cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
+                margin-bottom: -2px; transition: all .15s; }
+  .admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .admin-badge { background: var(--error); color: #fff; border-radius: 10px;
+                 font-size: 10px; padding: 1px 6px; margin-left: 5px; }
+  .user-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .user-table th { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border);
+                   font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  .user-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .user-table tr:last-child td { border-bottom: none; }
+  .btn-approve { background: var(--success); color: #fff; border: none; border-radius: 4px;
+                 padding: 3px 10px; font-size: 12px; cursor: pointer; font-weight: 600; }
+  .btn-reject  { background: var(--bg); color: var(--error); border: 1px solid var(--error);
+                 border-radius: 4px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  .btn-del     { background: none; border: none; color: var(--error); cursor: pointer;
+                 font-size: 16px; padding: 0 4px; }
+  .role-pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+               font-weight: 600; }
+  .role-admin { background: color-mix(in srgb,var(--accent) 15%,transparent); color: var(--accent); }
+  .role-user  { background: color-mix(in srgb,var(--muted)  15%,transparent); color: var(--muted);  }
+  .login-footer { font-size: 12px; color: var(--muted); text-align: center; margin-top: 14px; }
+  .login-footer a { color: var(--accent); cursor: pointer; text-decoration: none; }
+  .login-footer a:hover { text-decoration: underline; }
 </style>
 
 <!-- ── Login overlay ── -->
 <div id="loginOverlay">
   <div class="login-box">
-    <h2>🔬 PL-Dock Runner</h2>
-    <div class="field">
-      <label>Username</label>
-      <input id="loginUser" placeholder="username" autocomplete="username">
+
+    <!-- Login view -->
+    <div id="loginView">
+      <h2>🔬 PL-Dock Runner</h2>
+      <div class="field">
+        <label>Username</label>
+        <input id="loginUser" placeholder="username" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="loginPass" type="password" placeholder="password" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Sign In</button>
+      <div class="login-error" id="loginError"></div>
+      <div class="login-footer">
+        No account? <a onclick="showRegisterView()">Request Access</a>
+      </div>
     </div>
-    <div class="field">
-      <label>Password</label>
-      <input id="loginPass" type="password" placeholder="password" autocomplete="current-password">
+
+    <!-- Register view -->
+    <div id="registerView" hidden>
+      <h2>🔬 Request Account</h2>
+      <div class="field">
+        <label>Username</label>
+        <input id="regUser" placeholder="3–20 characters, a–z 0–9 _">
+      </div>
+      <div class="field">
+        <label>E-mail</label>
+        <input id="regEmail" type="email" placeholder="your@email.com">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="regPass" type="password" placeholder="at least 8 characters">
+      </div>
+      <div class="field">
+        <label>Confirm Password</label>
+        <input id="regPass2" type="password" placeholder="repeat password">
+      </div>
+      <button class="btn btn-primary" id="regBtn" onclick="doRegister()">Submit Request</button>
+      <div class="login-error" id="regError"></div>
+      <div class="login-footer">
+        <a onclick="showLoginView()">← Back to Sign In</a>
+      </div>
     </div>
-    <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Sign In</button>
-    <div class="login-error" id="loginError"></div>
+
   </div>
 </div>
 
@@ -386,6 +447,21 @@
     <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Click a row to pre-fill the form.</p>
   </div>
 
+  <!-- Admin Panel (admin only) -->
+  <div class="card" id="adminPanel" hidden>
+    <h2>User Management <span id="pendingBadge" class="admin-badge" hidden></span></h2>
+    <div class="admin-tabs">
+      <button class="admin-tab active" id="tabPending" onclick="switchAdminTab('pending')">
+        Pending Approval
+      </button>
+      <button class="admin-tab" id="tabActive" onclick="switchAdminTab('active')">
+        Active Users
+      </button>
+    </div>
+    <div id="adminPendingList"></div>
+    <div id="adminActiveList" hidden></div>
+  </div>
+
 </div><!-- /main -->
 <footer>
   PL-Dock Runner · <a href="https://github.com/ccsb-scripps/AutoDock-Vina" target="_blank">AutoDock Vina 1.2</a>
@@ -461,9 +537,10 @@ async function doLogin() {
     const data = await resp.json();
     LS.set('pyrx_token', data.token);
     LS.set('pyrx_user', data.username);
+    LS.set('pyrx_role', data.role || 'user');
     document.getElementById('loginOverlay').hidden = true;
     document.getElementById('app').hidden = false;
-    renderUserBadge(data.username);
+    renderUserBadge(data.username, data.role || 'user');
   } catch (e) {
     errEl.textContent = e.message;
   } finally {
@@ -479,10 +556,14 @@ function doLogout() {
   document.getElementById('loginPass').value = '';
 }
 
-function renderUserBadge(name) {
+function renderUserBadge(name, role) {
+  const roleTag = role === 'admin' ? ' <span style="font-size:10px;opacity:.8">[admin]</span>' : '';
   document.getElementById('headerRight').innerHTML =
-    `<span class="user-badge">👤 ${name}</span>
+    `<span class="user-badge">👤 ${name}${roleTag}</span>
      <button class="btn-link" onclick="doLogout()">Sign out</button>`;
+  const panel = document.getElementById('adminPanel');
+  if (role === 'admin') { panel.hidden = false; loadAdminPanel(); }
+  else                  { panel.hidden = true; }
 }
 
 // ── Settings ───────────────────────────────────────────
@@ -492,7 +573,10 @@ window.addEventListener('load', () => {
   if (tok && user) {
     document.getElementById('loginOverlay').hidden = true;
     document.getElementById('app').hidden = false;
-    renderUserBadge(user);
+    try {
+      const payload = JSON.parse(atob(tok.split('.')[1]));
+      renderUserBadge(user, payload.role || 'user');
+    } catch { renderUserBadge(user, 'user'); }
   }
 });
 
@@ -847,5 +931,125 @@ function takeSnapshot() {
   const a = document.createElement('a');
   a.href = url; a.download = 'docking-view.png';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+// ── Register / Login view toggle ───────────────────────
+function showRegisterView() {
+  document.getElementById('loginView').hidden    = true;
+  document.getElementById('registerView').hidden = false;
+  document.getElementById('regError').textContent = '';
+}
+function showLoginView() {
+  document.getElementById('registerView').hidden = true;
+  document.getElementById('loginView').hidden    = false;
+  document.getElementById('loginError').textContent = '';
+}
+
+async function doRegister() {
+  const username = document.getElementById('regUser').value.trim();
+  const email    = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPass').value;
+  const confirm  = document.getElementById('regPass2').value;
+  const errEl    = document.getElementById('regError');
+  const btn      = document.getElementById('regBtn');
+  errEl.textContent = '';
+
+  if (password !== confirm) { errEl.textContent = 'Passwords do not match.'; return; }
+
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    const resp = await fetch(getApiBase() + '/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ username, email, password })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Registration failed');
+    errEl.style.color = 'var(--success)';
+    errEl.textContent = '✓ Request submitted — please wait for admin approval.';
+    btn.hidden = true;
+    setTimeout(showLoginView, 3000);
+  } catch (e) {
+    errEl.style.color = 'var(--error)';
+    errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit Request';
+  }
+}
+
+// ── Admin Panel ────────────────────────────────────────
+let _adminTab = 'pending';
+
+function switchAdminTab(tab) {
+  _adminTab = tab;
+  document.getElementById('tabPending').classList.toggle('active', tab === 'pending');
+  document.getElementById('tabActive').classList.toggle('active',  tab === 'active');
+  document.getElementById('adminPendingList').hidden = (tab !== 'pending');
+  document.getElementById('adminActiveList').hidden  = (tab !== 'active');
+}
+
+async function loadAdminPanel() {
+  try {
+    const resp = await apiFetch('/api/admin/users');
+    const { users } = await resp.json();
+    const pending = users.filter(u => u.status === 'pending');
+    const active  = users.filter(u => u.status === 'active');
+
+    const badge = document.getElementById('pendingBadge');
+    badge.textContent = pending.length;
+    badge.hidden = pending.length === 0;
+
+    document.getElementById('adminPendingList').innerHTML =
+      pending.length === 0
+        ? '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">No pending requests</p>'
+        : `<table class="user-table">
+             <thead><tr><th>Username</th><th>E-mail</th><th>Requested</th><th>Actions</th></tr></thead>
+             <tbody>${pending.map(u => `
+               <tr>
+                 <td><strong>${u.username}</strong></td>
+                 <td>${u.email}</td>
+                 <td style="color:var(--muted)">${u.created_at ? u.created_at.replace('T',' ').replace('Z','') : '—'}</td>
+                 <td style="display:flex;gap:6px">
+                   <button class="btn-approve" onclick="approveUser('${u.username}')">✓ Approve</button>
+                   <button class="btn-reject"  onclick="deleteUser('${u.username}')">✗ Reject</button>
+                 </td>
+               </tr>`).join('')}
+             </tbody>
+           </table>`;
+
+    document.getElementById('adminActiveList').innerHTML =
+      `<table class="user-table">
+         <thead><tr><th>Username</th><th>E-mail</th><th>Role</th><th>Created</th><th></th></tr></thead>
+         <tbody>${active.map(u => `
+           <tr>
+             <td><strong>${u.username}</strong></td>
+             <td>${u.email}</td>
+             <td><span class="role-pill role-${u.role}">${u.role}</span></td>
+             <td style="color:var(--muted)">${u.created_at ? u.created_at.replace('T',' ').replace('Z','') : '—'}</td>
+             <td>${u.username === LS.get('pyrx_user') ? '' :
+               `<button class="btn-del" title="Delete ${u.username}" onclick="deleteUser('${u.username}')">🗑</button>`}
+             </td>
+           </tr>`).join('')}
+         </tbody>
+       </table>`;
+  } catch (e) {
+    document.getElementById('adminPendingList').innerHTML =
+      `<div class="alert alert-error">Failed to load users: ${e.message}</div>`;
+  }
+}
+
+async function approveUser(username) {
+  try {
+    await apiFetch(`/api/admin/users/${username}/approve`, { method: 'POST' });
+    loadAdminPanel();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteUser(username) {
+  if (!confirm(`Delete user "${username}"?`)) return;
+  try {
+    await apiFetch(`/api/admin/users/${username}`, { method: 'DELETE' });
+    loadAdminPanel();
+  } catch (e) { alert('Error: ' + e.message); }
 }
 </script>
