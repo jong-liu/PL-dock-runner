@@ -67,6 +67,24 @@
   .adv-section { margin-top: 12px; display: none; }
   .adv-section.open { display: block; }
 
+  /* Input mode toggle */
+  .mode-tabs { display: flex; gap: 0; margin-bottom: 6px; border: 1px solid var(--border);
+               border-radius: 6px; overflow: hidden; width: fit-content; }
+  .mode-tab { background: var(--bg); border: none; padding: 4px 12px; font-size: 11px;
+              font-weight: 600; cursor: pointer; color: var(--muted); transition: all .15s; }
+  .mode-tab.active { background: var(--accent); color: #fff; }
+  .mode-tab:hover:not(.active) { background: var(--border); }
+
+  /* Upload zone */
+  .upload-zone { border: 2px dashed var(--border); border-radius: 6px; padding: 12px 16px;
+                 text-align: center; cursor: pointer; transition: border-color .15s; }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); }
+  .upload-zone input[type=file] { display: none; }
+  .upload-zone .uz-label { font-size: 13px; color: var(--muted); }
+  .upload-zone .uz-label span { color: var(--accent); font-weight: 600; }
+  .upload-zone .uz-name { font-size: 12px; color: var(--success); margin-top: 4px;
+                           font-weight: 600; word-break: break-all; }
+
   /* Buttons */
   .btn { padding: 9px 20px; border-radius: 6px; border: none; cursor: pointer;
          font-size: 14px; font-weight: 600; transition: background .15s, opacity .15s; }
@@ -200,15 +218,47 @@
   <div class="card">
     <h2>Submit Docking Job</h2>
     <div class="form-row">
+      <!-- PDB field -->
       <div class="field" style="flex:2">
-        <label>PDB ID <span style="color:var(--error)">*</span></label>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+          <label style="margin:0">Receptor <span style="color:var(--error)">*</span></label>
+          <div class="mode-tabs">
+            <button class="mode-tab active" id="pdbTab0" onclick="setPdbMode('id')">PDB ID</button>
+            <button class="mode-tab"        id="pdbTab1" onclick="setPdbMode('file')">Upload .pdb</button>
+          </div>
+        </div>
         <input id="pdbInput" placeholder="e.g. 1HPV" maxlength="10" style="text-transform:uppercase">
-        <span class="hint">RCSB Protein Data Bank identifier</span>
+        <div id="pdbUploadZone" class="upload-zone" hidden
+             onclick="document.getElementById('pdbFileInput').click()"
+             ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="handleDrop(event,'pdbFileInput')">
+          <input type="file" id="pdbFileInput" accept=".pdb" onchange="onFileChosen(this,'pdbZoneName')">
+          <div class="uz-label">📂 <span>Click to browse</span> or drag & drop</div>
+          <div class="uz-name" id="pdbZoneName"></div>
+        </div>
+        <span class="hint" id="pdbHint">RCSB Protein Data Bank identifier</span>
       </div>
+      <!-- Ligand field -->
       <div class="field" style="flex:2">
-        <label>Ligand Resname <span style="color:var(--error)">*</span></label>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+          <label style="margin:0">Ligand <span style="color:var(--error)">*</span></label>
+          <div class="mode-tabs">
+            <button class="mode-tab active" id="ligTab0" onclick="setLigMode('resname')">Resname</button>
+            <button class="mode-tab"        id="ligTab1" onclick="setLigMode('file')">Upload file</button>
+          </div>
+        </div>
         <input id="ligandInput" placeholder="e.g. 478" maxlength="10" style="text-transform:uppercase">
-        <span class="hint">3-character PDB residue code of co-crystal ligand</span>
+        <div id="ligUploadZone" class="upload-zone" hidden
+             onclick="document.getElementById('ligandFileInput').click()"
+             ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="handleDrop(event,'ligandFileInput')">
+          <input type="file" id="ligandFileInput" accept=".mol2,.sdf,.pdb" onchange="onFileChosen(this,'ligZoneName')">
+          <div class="uz-label">📂 <span>Click to browse</span> or drag & drop</div>
+          <div class="uz-name" id="ligZoneName"></div>
+        </div>
+        <span class="hint" id="ligHint">3-character PDB residue code of co-crystal ligand</span>
       </div>
     </div>
     <button class="adv-toggle" onclick="toggleAdv()" id="advToggle">▶ Advanced settings</button>
@@ -437,12 +487,56 @@ window.addEventListener('load', () => {
   }
 });
 
+// ── Input mode helpers ─────────────────────────────────
+let _pdbMode = 'id', _ligMode = 'resname';
+
+function setPdbMode(mode) {
+  _pdbMode = mode;
+  document.getElementById('pdbTab0').classList.toggle('active', mode === 'id');
+  document.getElementById('pdbTab1').classList.toggle('active', mode === 'file');
+  document.getElementById('pdbInput').hidden        = (mode === 'file');
+  document.getElementById('pdbUploadZone').hidden   = (mode === 'id');
+  document.getElementById('pdbHint').textContent    =
+    mode === 'id' ? 'RCSB Protein Data Bank identifier' : 'Accepted format: .pdb';
+}
+
+function setLigMode(mode) {
+  _ligMode = mode;
+  document.getElementById('ligTab0').classList.toggle('active', mode === 'resname');
+  document.getElementById('ligTab1').classList.toggle('active', mode === 'file');
+  document.getElementById('ligandInput').hidden      = (mode === 'file');
+  document.getElementById('ligUploadZone').hidden    = (mode === 'resname');
+  document.getElementById('ligHint').textContent     =
+    mode === 'resname' ? '3-character PDB residue code of co-crystal ligand'
+                       : 'Accepted formats: .mol2, .sdf, .pdb';
+}
+
+function onFileChosen(input, nameId) {
+  const f = input.files[0];
+  document.getElementById(nameId).textContent = f ? `✓ ${f.name}` : '';
+  input.closest('.upload-zone').classList.remove('drag-over');
+}
+
+function handleDrop(event, inputId) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over');
+  const input = document.getElementById(inputId);
+  const dt = event.dataTransfer;
+  if (dt.files.length) {
+    const transfer = new DataTransfer();
+    transfer.items.add(dt.files[0]);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change'));
+  }
+}
+
 // ── Form helpers ───────────────────────────────────────
 function toggleAdv() {
   const s = document.getElementById('advSection'), b = document.getElementById('advToggle');
   b.textContent = (s.classList.toggle('open') ? '▼' : '▶') + ' Advanced settings';
 }
 function fillExample(pdb, lig) {
+  setPdbMode('id'); setLigMode('resname');
   document.getElementById('pdbInput').value    = pdb;
   document.getElementById('ligandInput').value = lig;
 }
@@ -454,12 +548,17 @@ function showFormError(msg) {
 // ── Submit job ─────────────────────────────────────────
 async function submitJob() {
   showFormError('');
-  const pdb    = document.getElementById('pdbInput').value.trim().toUpperCase();
-  const ligand = document.getElementById('ligandInput').value.trim().toUpperCase();
-  const box    = document.getElementById('boxSelect').value;
-  const exh    = document.getElementById('exhaSelect').value;
-  if (!pdb)    return showFormError('PDB ID is required.');
-  if (!ligand) return showFormError('Ligand resname is required.');
+  const pdb      = document.getElementById('pdbInput').value.trim().toUpperCase();
+  const ligand   = document.getElementById('ligandInput').value.trim().toUpperCase();
+  const pdbFile  = document.getElementById('pdbFileInput').files[0];
+  const ligFile  = document.getElementById('ligandFileInput').files[0];
+  const box      = document.getElementById('boxSelect').value;
+  const exh      = document.getElementById('exhaSelect').value;
+
+  if (_pdbMode === 'id'   && !pdb)     return showFormError('PDB ID is required.');
+  if (_pdbMode === 'file' && !pdbFile) return showFormError('Please select a .pdb receptor file.');
+  if (_ligMode === 'resname' && !ligand)  return showFormError('Ligand resname is required.');
+  if (_ligMode === 'file'   && !ligFile)  return showFormError('Please select a ligand file.');
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true; btn.textContent = '⏳ Submitting…';
@@ -469,18 +568,50 @@ async function submitJob() {
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('resultsSection').style.display = 'none';
   document.getElementById('spinner').style.display = 'block';
-
   setBadge('queued', 'Submitting job…');
 
   try {
-    const resp = await apiFetch('/api/dock', {
-      method: 'POST',
-      body: JSON.stringify({ pdb_id: pdb, ligand_resname: ligand,
-                             box_size: Number(box), exhaustiveness: Number(exh) })
-    });
-    const data = await resp.json();
+    const token = getToken();
+    let fetchOpts;
+    const label = (_pdbMode === 'file' ? (pdbFile.name) : pdb)
+                + ' / '
+                + (_ligMode === 'file' ? (ligFile.name) : ligand);
+
+    if (_pdbMode === 'file' || _ligMode === 'file') {
+      const fd = new FormData();
+      fd.append('pdb_id',           _pdbMode === 'id'   ? pdb    : '');
+      fd.append('ligand_resname',   _ligMode === 'resname' ? ligand : '');
+      fd.append('box_size',         box);
+      fd.append('exhaustiveness',   exh);
+      if (pdbFile)  fd.append('pdb_file',    pdbFile);
+      if (ligFile)  fd.append('ligand_file', ligFile);
+      fetchOpts = {
+        method: 'POST',
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: fd
+      };
+    } else {
+      fetchOpts = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ pdb_id: pdb, ligand_resname: ligand,
+                               box_size: Number(box), exhaustiveness: Number(exh) })
+      };
+    }
+
+    const raw  = await fetch(getApiBase() + '/api/dock', fetchOpts);
+    if (raw.status === 401) { doLogout(); throw new Error('Session expired — please log in again.'); }
+    if (!raw.ok) { const e = await raw.json().catch(()=>({})); throw new Error(e.error || `HTTP ${raw.status}`); }
+    const data = await raw.json();
     currentJobId = data.job_id;
-    setBadge('queued', `Job queued: ${pdb} / ${ligand}`);
+    setBadge('queued', `Job queued: ${label}`);
     startPolling();
   } catch (e) {
     setBadge('failure', e.message);

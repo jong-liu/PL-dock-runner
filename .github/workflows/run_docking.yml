@@ -21,6 +21,16 @@ on:
         required: false
         default: '16'
         type: string
+      pdb_file:
+        description: 'Server path to uploaded PDB file (optional)'
+        required: false
+        default: ''
+        type: string
+      ligand_file:
+        description: 'Server path to uploaded ligand file (optional)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   docking:
@@ -40,6 +50,8 @@ jobs:
             python /home/jong/pyrx/pyrx/scripts/run_pipeline.py \
               --pdb            "${{ inputs.pdb_id }}" \
               --ligand         "${{ inputs.ligand_resname }}" \
+              --pdb-file       "${{ inputs.pdb_file }}" \
+              --ligand-file    "${{ inputs.ligand_file }}" \
               --box            "${{ inputs.box_size }}" \
               --exhaustiveness "${{ inputs.exhaustiveness }}" \
               --out            "/tmp/pyrx-job-${{ github.run_id }}"
