@@ -281,6 +281,15 @@
             <option value="32">32 — accurate (~12 min)</option>
           </select>
         </div>
+        <div class="field">
+          <label>Models (poses)</label>
+          <select id="modesSelect">
+            <option value="9"  selected>9 — default</option>
+            <option value="11">11</option>
+            <option value="13">13</option>
+            <option value="15">15</option>
+          </select>
+        </div>
       </div>
     </div>
     <div id="formError" class="alert alert-error" style="display:none"></div>
@@ -554,6 +563,7 @@ async function submitJob() {
   const ligFile  = document.getElementById('ligandFileInput').files[0];
   const box      = document.getElementById('boxSelect').value;
   const exh      = document.getElementById('exhaSelect').value;
+  const modes    = document.getElementById('modesSelect').value;
 
   if (_pdbMode === 'id'   && !pdb)     return showFormError('PDB ID is required.');
   if (_pdbMode === 'file' && !pdbFile) return showFormError('Please select a .pdb receptor file.');
@@ -583,6 +593,7 @@ async function submitJob() {
       fd.append('ligand_resname',   _ligMode === 'resname' ? ligand : '');
       fd.append('box_size',         box);
       fd.append('exhaustiveness',   exh);
+      fd.append('num_modes',        modes);
       if (pdbFile)  fd.append('pdb_file',    pdbFile);
       if (ligFile)  fd.append('ligand_file', ligFile);
       fetchOpts = {
@@ -602,7 +613,8 @@ async function submitJob() {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ pdb_id: pdb, ligand_resname: ligand,
-                               box_size: Number(box), exhaustiveness: Number(exh) })
+                               box_size: Number(box), exhaustiveness: Number(exh),
+                               num_modes: Number(modes) })
       };
     }
 

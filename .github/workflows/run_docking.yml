@@ -21,6 +21,11 @@ on:
         required: false
         default: '16'
         type: string
+      num_modes:
+        description: 'Max binding poses to generate — 9 / 11 / 13 / 15'
+        required: false
+        default: '9'
+        type: string
       pdb_file:
         description: 'Server path to uploaded PDB file (optional)'
         required: false
@@ -54,6 +59,7 @@ jobs:
               --ligand-file    "${{ inputs.ligand_file }}" \
               --box            "${{ inputs.box_size }}" \
               --exhaustiveness "${{ inputs.exhaustiveness }}" \
+              --num-modes      "${{ inputs.num_modes }}" \
               --out            "/tmp/pyrx-job-${{ github.run_id }}"
 
       - name: Upload results
