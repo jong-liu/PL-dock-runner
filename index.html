@@ -876,26 +876,20 @@ function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1).replace(/_/g
 async function showResults(jobData) {
   document.getElementById('resultsSection').style.display = 'block';
 
-  // Fetch scores from summary via download (we'll show placeholder first)
-  document.getElementById('bestScore').textContent = '…';
+  // Show best score immediately from job metadata
+  const bs = jobData.best_score;
+  document.getElementById('bestScore').textContent = bs != null ? bs.toFixed(2) : '—';
 
   // Enable download button
-  const dlBtn = document.getElementById('dlBtn');
-  dlBtn.disabled = false;
+  document.getElementById('dlBtn').disabled = false;
 
   // Load PDB and render 3D
   try {
     const pdbResp = await apiFetch(`/api/pdb/${currentJobId}`);
     const pdbText = await pdbResp.text();
     renderViewer(pdbText);
-    // Extract scores from REMARK lines
-    const scores = parsePDBScores(pdbText);
-    if (scores.length === 0) {
-      // Try to fetch scores from artifact
-      await loadScoresFromArtifact();
-    } else {
-      displayScores(scores);
-    }
+    // Try to load all pose scores from artifact (for the grid)
+    await loadScoresFromArtifact();
   } catch (e) {
     document.getElementById('viewerLoading').innerHTML =
       `<span style="color:#f85149">⚠ ${e.message}</span>`;
@@ -977,6 +971,11 @@ function renderViewer(pdbText) {
   document.getElementById('viewerLoading').style.display = 'none';
 
   const container = document.getElementById('viewer3d');
+  // Set explicit pixel size so 3Dmol canvas initialises correctly
+  const wrap = container.closest('.viewer-wrap');
+  container.style.width  = wrap.offsetWidth  + 'px';
+  container.style.height = wrap.offsetHeight + 'px';
+
   if (viewer3d) { viewer3d.clear(); }
   viewer3d = $3Dmol.createViewer(container, { backgroundColor: '#1a1a2e' });
 
@@ -994,6 +993,9 @@ function renderViewer(pdbText) {
 
   viewer3d.zoomTo({ chain: 'B' });
   viewer3d.render();
+
+  // Resize after browser reflow to handle any layout adjustment
+  requestAnimationFrame(() => { viewer3d.resize(); viewer3d.render(); });
 }
 
 function resetView() {
