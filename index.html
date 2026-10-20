@@ -407,6 +407,22 @@
           <div id="statusText" style="font-size:14px"></div>
         </div>
 
+        <!-- Pipeline progress log (visible while running) -->
+        <div id="progressLog" hidden
+             style="margin-top:10px;font-family:monospace;font-size:11px;
+                    background:var(--code-bg);border:1px solid var(--border);
+                    border-radius:6px;padding:8px 10px;max-height:150px;
+                    overflow-y:auto;line-height:1.7;color:var(--muted)">
+        </div>
+
+        <!-- Cancel button (visible while job is active) -->
+        <button id="cancelBtn" hidden onclick="cancelJob()"
+                style="margin-top:10px;background:none;border:1px solid var(--error);
+                       color:var(--error);border-radius:6px;padding:5px 16px;
+                       font-size:12px;font-weight:600;cursor:pointer;">
+          ✕ Cancel Job
+        </button>
+
     <div id="resultsSection">
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
 
@@ -769,7 +785,9 @@ async function submitJob() {
     const data = await raw.json();
     currentJobId = data.job_id;
     setBadge('queued', `Job queued: ${label}`);
-    renderTimeline(Date.now() / 1000, [], []);
+    renderTimeline(Date.now() / 1000, []);
+    document.getElementById('progressLog').hidden = true;
+    document.getElementById('cancelBtn').hidden   = false;
     startPolling();
   } catch (e) {
     setBadge('failure', e.message);
@@ -791,18 +809,22 @@ async function pollStatus() {
     const data = await resp.json();
     const s = data.status, c = data.conclusion;
     const label = c ? `${capitalize(s)} — ${capitalize(c)}` : capitalize(s);
+    const active = (s === 'queued' || (s === 'in_progress' && !c));
 
-    // Fetch progress log (only while running — file is cleaned up after)
+    // Fetch & render pipeline progress log while job is active
     let progressLines = [];
-    if (data.run_id && s !== 'completed') {
+    if (data.run_id && active) {
       try {
         const pr = await apiFetch(`/api/progress/${currentJobId}`);
         progressLines = (await pr.json()).lines || [];
       } catch { /* ignore */ }
     }
-    renderTimeline(data.dispatched_at, data.steps || [], progressLines);
+    renderTimeline(data.dispatched_at, data.steps || []);
+    renderProgressLog(progressLines);
+    document.getElementById('progressLog').hidden = !progressLines.length;
+    document.getElementById('cancelBtn').hidden   = !active;
 
-    if (s === 'queued' || (!c && s !== 'completed')) {
+    if (active) {
       setBadge(s === 'queued' ? 'queued' : 'running', label);
     } else if (s === 'completed' && c === 'success') {
       clearInterval(pollTimer);
@@ -812,7 +834,8 @@ async function pollStatus() {
       await showResults(data);
     } else {
       clearInterval(pollTimer);
-      setBadge('failure', `${capitalize(c || s)} — check GitHub Actions log`);
+      const cls = c === 'cancelled' ? 'failure' : 'failure';
+      setBadge(cls, `${capitalize(c || s)} — ${data.pdb_id} / ${data.ligand}`);
       document.getElementById('spinner').style.display = 'none';
       loadJobHistory();
     }
@@ -1008,7 +1031,7 @@ function takeSnapshot() {
 }
 
 // ── Timeline renderer ──────────────────────────────────
-function renderTimeline(dispatchedAt, steps, progressLines) {
+function renderTimeline(dispatchedAt, steps) {
   const logEl = document.getElementById('timelineLog');
   if (!logEl) return;
 
@@ -1037,22 +1060,19 @@ function renderTimeline(dispatchedAt, steps, progressLines) {
   if (dispatchedAt) {
     entries.push({ time: fmt(dispatchedAt), label: 'Job Queued', state: 'done' });
   }
-  for (const step of steps) {
+  for (const step of (steps || [])) {
     if (SKIP_STEPS.has(step.name)) continue;
     let state = 'pending';
     if (step.status === 'completed') state = step.conclusion === 'success' ? 'done' : 'fail';
     else if (step.status === 'in_progress') state = 'run';
     entries.push({
-      time: fmt(step.started_at || ''),
+      time:  fmt(step.started_at || ''),
       label: STEP_LABELS[step.name] || step.name,
       state,
     });
   }
 
-  const subLines = (progressLines || []).slice(-5);
-  const isLast   = i => i === entries.length - 1 && !subLines.length;
-
-  let html = entries.map((e, i) =>
+  logEl.innerHTML = entries.map(e =>
     `<div class="tl-entry">
        <div class="tl-dot ${e.state === 'done' ? 'done' : e.state === 'run' ? 'run' : e.state === 'fail' ? 'fail' : ''}"></div>
        <div class="tl-body">
@@ -1060,15 +1080,38 @@ function renderTimeline(dispatchedAt, steps, progressLines) {
          <div class="tl-label">${e.label}</div>
        </div>
      </div>`
-  ).join('');
+  ).join('') || '<div style="color:var(--muted);font-size:11px">Waiting for job…</div>';
+}
 
-  if (subLines.length) {
-    html += `<div style="padding-left:26px;margin-top:-8px;padding-bottom:4px">
-      <div class="tl-sub">${subLines.map(l => `<div>${l}</div>`).join('')}</div>
-    </div>`;
+function renderProgressLog(lines) {
+  const el = document.getElementById('progressLog');
+  if (!el) return;
+  if (!lines || !lines.length) { el.innerHTML = ''; return; }
+  el.innerHTML = lines.map(l => {
+    const escaped = l.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const isStep = /^\d{2}:\d{2}:\d{2}\s+\[/.test(l);
+    return `<div style="${isStep ? 'color:var(--text);font-weight:600' : ''}">${escaped}</div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+async function cancelJob() {
+  if (!currentJobId) return;
+  if (!confirm('Cancel this docking job?')) return;
+  const btn = document.getElementById('cancelBtn');
+  btn.disabled = true; btn.textContent = 'Cancelling…';
+  try {
+    await apiFetch(`/api/jobs/${currentJobId}/cancel`, { method: 'POST' });
+    clearInterval(pollTimer);
+    setBadge('failure', 'Cancelled');
+    document.getElementById('spinner').style.display  = 'none';
+    document.getElementById('cancelBtn').hidden       = true;
+    document.getElementById('progressLog').hidden     = true;
+    loadJobHistory();
+  } catch (e) {
+    alert('Cancel failed: ' + e.message);
+    btn.disabled = false; btn.textContent = '✕ Cancel Job';
   }
-
-  logEl.innerHTML = html || '<div style="color:var(--muted);font-size:11px">Waiting for job…</div>';
 }
 
 // ── Job history ────────────────────────────────────────
@@ -1132,22 +1175,28 @@ async function loadJobResult(jobId, pdbId, ligand) {
   card.style.display = 'block';
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  document.getElementById('spinner').style.display = 'none';
+  document.getElementById('spinner').style.display     = 'none';
   document.getElementById('resultsSection').style.display = 'none';
-  document.getElementById('timelineLog').innerHTML =
+  document.getElementById('progressLog').hidden         = true;
+  document.getElementById('cancelBtn').hidden           = true;
+  document.getElementById('timelineLog').innerHTML      =
     '<div style="color:var(--muted);font-size:11px">Loading…</div>';
   setBadge('queued', `Loading ${pdbId} / ${ligand}…`);
 
   try {
     const resp = await apiFetch(`/api/status/${jobId}`);
     const data = await resp.json();
+    const active = data.status !== 'completed';
 
     let progressLines = [];
-    if (data.run_id) {
+    if (data.run_id && active) {
       try { progressLines = (await (await apiFetch(`/api/progress/${jobId}`)).json()).lines || []; }
       catch { /* no log available */ }
     }
-    renderTimeline(data.dispatched_at, data.steps || [], progressLines);
+    renderTimeline(data.dispatched_at, data.steps || []);
+    renderProgressLog(progressLines);
+    document.getElementById('progressLog').hidden = !progressLines.length;
+    document.getElementById('cancelBtn').hidden   = !active;
 
     if (data.status === 'completed' && data.conclusion === 'success') {
       setBadge('success', `Complete — ${pdbId} / ${ligand}`);
