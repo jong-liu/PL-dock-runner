@@ -2,7 +2,7 @@
 <title>PL-Dock Runner — Molecular Docking</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="https://cdn.jsdelivr.net/npm/3dmol@2.1.5/build/3Dmol-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.1.0/3Dmol-min.js"></script>
 <style>
   :root {
     --bg:      #f5f7fa;
@@ -891,8 +891,9 @@ async function showResults(jobData) {
     // Try to load all pose scores from artifact (for the grid)
     await loadScoresFromArtifact();
   } catch (e) {
-    document.getElementById('viewerLoading').innerHTML =
-      `<span style="color:#f85149">⚠ ${e.message}</span>`;
+    const el = document.getElementById('viewerLoading');
+    el.innerHTML = `<span style="color:#f85149">⚠ ${e.message}</span>`;
+    el.style.display = 'flex';
   }
 }
 
@@ -968,16 +969,27 @@ async function downloadZip() {
 
 // ── 3Dmol viewer ───────────────────────────────────────
 function renderViewer(pdbText) {
-  document.getElementById('viewerLoading').style.display = 'none';
+  const loading = document.getElementById('viewerLoading');
+  loading.style.display = 'none';
+
+  if (typeof $3Dmol === 'undefined') {
+    loading.innerHTML = '<span style="color:#f85149">⚠ 3Dmol library failed to load</span>';
+    loading.style.display = 'flex';
+    return;
+  }
 
   const container = document.getElementById('viewer3d');
-  // Set explicit pixel size so 3Dmol canvas initialises correctly
   const wrap = container.closest('.viewer-wrap');
-  container.style.width  = wrap.offsetWidth  + 'px';
-  container.style.height = wrap.offsetHeight + 'px';
+  const W = wrap.offsetWidth  || 600;
+  const H = wrap.offsetHeight || 480;
+  container.style.width  = W + 'px';
+  container.style.height = H + 'px';
 
-  if (viewer3d) { viewer3d.clear(); }
-  viewer3d = $3Dmol.createViewer(container, { backgroundColor: '#1a1a2e' });
+  // Clear any prior viewer and canvas
+  if (viewer3d) { try { viewer3d.clear(); } catch(_) {} viewer3d = null; }
+  container.innerHTML = '';
+
+  viewer3d = $3Dmol.createViewer(container, { backgroundColor: '#1a1a2e', width: W, height: H });
 
   viewer3d.addModel(pdbText, 'pdb');
 
@@ -994,8 +1006,8 @@ function renderViewer(pdbText) {
   viewer3d.zoomTo({ chain: 'L' });
   viewer3d.render();
 
-  // Resize after browser reflow to handle any layout adjustment
-  requestAnimationFrame(() => { viewer3d.resize(); viewer3d.render(); });
+  // Resize after browser layout pass to ensure canvas fills the container
+  setTimeout(() => { if (viewer3d) { viewer3d.resize(); viewer3d.render(); } }, 200);
 }
 
 function resetView() {
