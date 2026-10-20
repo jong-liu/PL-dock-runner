@@ -120,15 +120,17 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 12px;
            font-size: 12px; font-weight: 600; }
-  .badge-queued   { background: #ddf4ff; color: #0969da; }
-  .badge-running  { background: #fff8c5; color: #9a6700; }
-  .badge-success  { background: #dafbe1; color: #1a7f37; }
-  .badge-failure  { background: #ffebe9; color: #cf222e; }
+  .badge-queued    { background: #ddf4ff; color: #0969da; }
+  .badge-running   { background: #fff8c5; color: #9a6700; }
+  .badge-success   { background: #dafbe1; color: #1a7f37; }
+  .badge-failure   { background: #ffebe9; color: #cf222e; }
+  .badge-cancelled { background: #f0f0f0; color: #57606a; }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .badge-queued  { background: #0c2d6b; color: #79c0ff; }
-    :root:not([data-theme="light"]) .badge-running { background: #3d2000; color: #e3b341; }
-    :root:not([data-theme="light"]) .badge-success { background: #0f2c18; color: #3fb950; }
-    :root:not([data-theme="light"]) .badge-failure { background: #300e0e; color: #f85149; }
+    :root:not([data-theme="light"]) .badge-queued    { background: #0c2d6b; color: #79c0ff; }
+    :root:not([data-theme="light"]) .badge-running   { background: #3d2000; color: #e3b341; }
+    :root:not([data-theme="light"]) .badge-success   { background: #0f2c18; color: #3fb950; }
+    :root:not([data-theme="light"]) .badge-failure   { background: #300e0e; color: #f85149; }
+    :root:not([data-theme="light"]) .badge-cancelled { background: #21262d; color: #8b949e; }
   }
 
   /* Results */
@@ -834,8 +836,8 @@ async function pollStatus() {
       await showResults(data);
     } else {
       clearInterval(pollTimer);
-      const cls = c === 'cancelled' ? 'failure' : 'failure';
-      setBadge(cls, `${capitalize(c || s)} — ${data.pdb_id} / ${data.ligand}`);
+      setBadge(c === 'cancelled' ? 'cancelled' : 'failure',
+               `${capitalize(c || s)} — ${data.pdb_id} / ${data.ligand}`);
       document.getElementById('spinner').style.display = 'none';
       loadJobHistory();
     }
@@ -847,7 +849,7 @@ async function pollStatus() {
 
 function setBadge(state, text) {
   const cls = { queued:'badge-queued', in_progress:'badge-running', running:'badge-running',
-                success:'badge-success', failure:'badge-failure' };
+                success:'badge-success', failure:'badge-failure', cancelled:'badge-cancelled' };
   document.getElementById('statusText').innerHTML =
     `<span class="badge ${cls[state]||'badge-queued'}">${capitalize(state)}</span>&nbsp; ${text}`;
 }
@@ -1103,7 +1105,7 @@ async function cancelJob() {
   try {
     await apiFetch(`/api/jobs/${currentJobId}/cancel`, { method: 'POST' });
     clearInterval(pollTimer);
-    setBadge('failure', 'Cancelled');
+    setBadge('cancelled', 'Cancelled');
     document.getElementById('spinner').style.display  = 'none';
     document.getElementById('cancelBtn').hidden       = true;
     document.getElementById('progressLog').hidden     = true;
