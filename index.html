@@ -447,7 +447,7 @@
           3D Structure Viewer
         </h2>
         <p style="font-size:13px;color:var(--muted);margin:0 0 4px">
-          Receptor (Chain A) in blue ribbon · Ligand (Chain B) in yellow sticks
+          Receptor in blue ribbon · Ligand (Chain L) in yellow sticks
         </p>
         <div class="viewer-wrap">
           <div id="viewerLoading" class="viewer-loading">
@@ -457,7 +457,7 @@
           <div id="viewer3d"></div>
           <div class="viewer-legend">
             <div><span class="legend-dot" style="background:#4a90d9"></span> Receptor (Chain A)</div>
-            <div><span class="legend-dot" style="background:#f0c040"></span> Ligand (Chain B)</div>
+            <div><span class="legend-dot" style="background:#f0c040"></span> Ligand (Chain L)</div>
           </div>
           <div class="viewer-controls">
             <button class="vc-btn" onclick="resetView()">⟳ Reset</button>
@@ -981,17 +981,17 @@ function renderViewer(pdbText) {
 
   viewer3d.addModel(pdbText, 'pdb');
 
-  // Receptor: cartoon
-  viewer3d.setStyle({ chain: 'A' }, {
+  // Receptor: all chains except L → cartoon
+  viewer3d.setStyle({}, {
     cartoon: { color: '#4a90d9', opacity: 0.85 }
   });
 
-  // Ligand: sticks
-  viewer3d.setStyle({ chain: 'B' }, {
+  // Ligand: chain L → sticks (overrides cartoon)
+  viewer3d.setStyle({ chain: 'L' }, {
     stick: { colorscheme: 'Jmol', radius: 0.25 }
   });
 
-  viewer3d.zoomTo({ chain: 'B' });
+  viewer3d.zoomTo({ chain: 'L' });
   viewer3d.render();
 
   // Resize after browser reflow to handle any layout adjustment
@@ -1000,7 +1000,7 @@ function renderViewer(pdbText) {
 
 function resetView() {
   if (!viewer3d) return;
-  viewer3d.zoomTo({ chain: 'B' });
+  viewer3d.zoomTo({ chain: 'L' });
   viewer3d.render();
 }
 
@@ -1015,7 +1015,7 @@ function toggleSurface() {
     viewer3d.addSurface($3Dmol.SurfaceType.VDW, {
       opacity: 0.45,
       colorscheme: { prop: 'b', gradient: 'rwb' }
-    }, { chain: 'A', within: { distance: 6, sel: { chain: 'B' } } });
+    }, { not: { chain: 'L' }, within: { distance: 6, sel: { chain: 'L' } } });
     btn.classList.add('active');
     surfaceShown = true;
   }
@@ -1027,14 +1027,14 @@ function toggleLigStyle() {
   const btn = document.getElementById('ligStyleBtn');
   ligStyleBall = !ligStyleBall;
   if (ligStyleBall) {
-    viewer3d.setStyle({ chain: 'B' }, {
+    viewer3d.setStyle({ chain: 'L' }, {
       sphere: { colorscheme: 'Jmol', radius: 0.35 },
       stick:  { colorscheme: 'Jmol', radius: 0.15 }
     });
     btn.classList.add('active');
     btn.textContent = '◈ Stick';
   } else {
-    viewer3d.setStyle({ chain: 'B' }, {
+    viewer3d.setStyle({ chain: 'L' }, {
       stick: { colorscheme: 'Jmol', radius: 0.25 }
     });
     btn.classList.remove('active');
