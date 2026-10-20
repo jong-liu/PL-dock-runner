@@ -614,6 +614,8 @@ async function doLogin() {
     document.getElementById('loginOverlay').hidden = true;
     document.getElementById('app').hidden = false;
     renderUserBadge(data.username, data.role || 'user');
+    const jobId = getJobUrlParam();
+    if (jobId) loadJobResult(jobId, '', '');
   } catch (e) {
     errEl.textContent = e.message;
   } finally {
@@ -624,6 +626,7 @@ async function doLogin() {
 function doLogout() {
   clearInterval(pollTimer);
   currentJobId = null;
+  clearJobUrl();
   LS.remove('pyrx_token'); LS.remove('pyrx_user');
   document.getElementById('app').hidden = true;
   document.getElementById('loginOverlay').hidden = false;
@@ -645,7 +648,18 @@ function renderUserBadge(name, role) {
   loadJobHistory();
 }
 
-// ── Settings ───────────────────────────────────────────
+// ── Job URL helpers ────────────────────────────────────
+function setJobUrl(jobId) {
+  if (jobId) window.history.replaceState({}, '', `?job=${encodeURIComponent(jobId)}`);
+}
+function clearJobUrl() {
+  window.history.replaceState({}, '', window.location.pathname);
+}
+function getJobUrlParam() {
+  return new URLSearchParams(window.location.search).get('job');
+}
+
+// ── Settings / auto-restore session ───────────────────
 window.addEventListener('load', () => {
   const user = LS.get('pyrx_user');
   const tok  = LS.get('pyrx_token');
@@ -656,6 +670,8 @@ window.addEventListener('load', () => {
       const payload = JSON.parse(atob(tok.split('.')[1]));
       renderUserBadge(user, payload.role || 'user');
     } catch { renderUserBadge(user, 'user'); }
+    const jobId = getJobUrlParam();
+    if (jobId) loadJobResult(jobId, '', '');
   }
 });
 
@@ -786,6 +802,7 @@ async function submitJob() {
     if (!raw.ok) { const e = await raw.json().catch(()=>({})); throw new Error(e.error || `HTTP ${raw.status}`); }
     const data = await raw.json();
     currentJobId = data.job_id;
+    setJobUrl(data.job_id);
     setBadge('queued', `Job queued: ${label}`);
     renderTimeline(Date.now() / 1000, []);
     document.getElementById('progressLog').hidden = true;
@@ -1089,7 +1106,7 @@ function renderProgressLog(lines) {
   const el = document.getElementById('progressLog');
   if (!el) return;
   if (!lines || !lines.length) { el.innerHTML = ''; return; }
-  el.innerHTML = lines.map(l => {
+  el.innerHTML = lines.slice(-5).map(l => {
     const escaped = l.replace(/&/g,'&amp;').replace(/</g,'&lt;');
     const isStep = /^\d{2}:\d{2}:\d{2}\s+\[/.test(l);
     return `<div style="${isStep ? 'color:var(--text);font-weight:600' : ''}">${escaped}</div>`;
@@ -1172,6 +1189,7 @@ async function loadJobHistory() {
 
 async function loadJobResult(jobId, pdbId, ligand) {
   currentJobId = jobId;
+  setJobUrl(jobId);
   clearInterval(pollTimer);
   const card = document.getElementById('statusCard');
   card.style.display = 'block';
