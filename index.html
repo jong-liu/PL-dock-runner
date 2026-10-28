@@ -481,7 +481,7 @@
           3D Structure Viewer
         </h2>
         <p style="font-size:13px;color:var(--muted);margin:0 0 4px">
-          Receptor in blue ribbon · Ligand (Chain L) in yellow sticks
+          Receptor in blue ribbon · Ligand (Chain L) in white carbon
           <span id="viewerPoseLabel" style="color:var(--accent);font-weight:600"></span>
         </p>
         <div class="viewer-wrap">
@@ -492,7 +492,7 @@
           <div id="viewer3d"></div>
           <div class="viewer-legend">
             <div><span class="legend-dot" style="background:#4a90d9"></span> Receptor (Chain A)</div>
-            <div><span class="legend-dot" style="background:#f0c040"></span> Ligand (Chain L)</div>
+            <div><span class="legend-dot" style="background:#ffffff"></span> Ligand (Chain L)</div>
           </div>
           <div class="viewer-controls">
             <button class="vc-btn" onclick="resetView()">⟳ Reset</button>
@@ -1131,7 +1131,7 @@ function renderViewer(pdbText) {
 
   // Ligand: chain L → sticks (overrides cartoon)
   viewer3d.setStyle({ chain: 'L' }, {
-    stick: { colorscheme: 'Jmol', radius: 0.25 }
+    stick: { colorscheme: 'whiteCarbon', radius: 0.25 }
   });
 
   viewer3d.zoomTo({ chain: 'L' });
@@ -1195,14 +1195,14 @@ function toggleLigStyle() {
   ligStyleBall = !ligStyleBall;
   if (ligStyleBall) {
     viewer3d.setStyle({ chain: 'L' }, {
-      sphere: { colorscheme: 'Jmol', radius: 0.35 },
-      stick:  { colorscheme: 'Jmol', radius: 0.15 }
+      sphere: { colorscheme: 'whiteCarbon', radius: 0.35 },
+      stick:  { colorscheme: 'whiteCarbon', radius: 0.15 }
     });
     btn.classList.add('active');
     btn.textContent = '◈ Stick';
   } else {
     viewer3d.setStyle({ chain: 'L' }, {
-      stick: { colorscheme: 'Jmol', radius: 0.25 }
+      stick: { colorscheme: 'whiteCarbon', radius: 0.25 }
     });
     btn.classList.remove('active');
     btn.textContent = '◈ Ball+Stick';
