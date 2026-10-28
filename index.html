@@ -496,6 +496,7 @@
           </div>
           <div class="viewer-controls">
             <button class="vc-btn" onclick="resetView()">⟳ Reset</button>
+            <button class="vc-btn" id="rotateBtn" onclick="toggleRotate()">↻ Rotate</button>
             <button class="vc-btn" id="surfBtn" onclick="toggleSurface()">◎ Surface</button>
             <button class="vc-btn" id="ligStyleBtn" onclick="toggleLigStyle()">◈ Ball+Stick</button>
             <button class="vc-btn" onclick="takeSnapshot()">📷 Snapshot</button>
@@ -584,6 +585,7 @@ let pollTimer    = null;
 let viewer3d     = null;
 let surfaceShown = false;
 let ligStyleBall = false;
+let spinning     = false;
 let posePDBs     = {};   // {poseIndex: complex PDB text} extracted from results ZIP
 let activePose   = 1;    // pose currently shown in the 3D viewer
 const MAX_CLICKABLE_POSES = 9;   // only the first 9 pose tiles switch the viewer
@@ -1110,10 +1112,13 @@ function renderViewer(pdbText) {
   // Reset overlay toggles — the fresh viewer starts with default styling
   surfaceShown = false;
   ligStyleBall = false;
+  spinning = false;
   const sb = document.getElementById('surfBtn');
   if (sb) sb.classList.remove('active');
   const lb = document.getElementById('ligStyleBtn');
   if (lb) { lb.classList.remove('active'); lb.textContent = '◈ Ball+Stick'; }
+  const rb = document.getElementById('rotateBtn');
+  if (rb) rb.classList.remove('active');
 
   viewer3d = $3Dmol.createViewer(container, { backgroundColor: '#1a1a2e', width: W, height: H });
 
@@ -1140,6 +1145,15 @@ function resetView() {
   if (!viewer3d) return;
   viewer3d.zoomTo({ chain: 'L' });
   viewer3d.render();
+}
+
+// Toggle continuous auto-rotation of the structure
+function toggleRotate() {
+  if (!viewer3d) return;
+  spinning = !spinning;
+  viewer3d.spin(spinning ? 'y' : false);
+  const btn = document.getElementById('rotateBtn');
+  if (btn) btn.classList.toggle('active', spinning);
 }
 
 // Switch the 3D viewer to a different pose (from a clicked pose tile)
