@@ -161,6 +161,10 @@
                     background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .pose-tile.best-vina { border-color: #e6a817;
                     background: color-mix(in srgb, #e6a817 8%, transparent); }
+  .pose-tile.clickable { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+  .pose-tile.clickable:hover { box-shadow: 0 0 0 1px var(--accent); transform: translateY(-1px); }
+  .pose-tile.active { box-shadow: inset 0 0 0 2px var(--accent);
+                    background: color-mix(in srgb, var(--accent) 18%, transparent); }
 
   /* 3D viewer */
   .viewer-wrap { position: relative; height: 480px; border-radius: 8px; overflow: hidden;
@@ -460,7 +464,7 @@
       </div>
       <div class="method-note" id="methodNote">
         <strong>Interpreting these scores (initial screening):</strong><br>
-        • <strong>3D viewer shows Pose 1</strong> — highest CNN pose score = most likely true binding mode.<br>
+        • <strong>Click any of the first 9 pose tiles</strong> to show that pose in the 3D viewer (Pose 1 ★ = highest CNN pose score = most likely true binding mode).<br>
         • <strong>Compare binding strength</strong> → prefer <em>CNN affinity</em> (Pose 1) or the most negative Vina affinity across all poses.
       </div>
       <div class="poses-grid" id="posesGrid"></div>
@@ -478,6 +482,7 @@
         </h2>
         <p style="font-size:13px;color:var(--muted);margin:0 0 4px">
           Receptor in blue ribbon · Ligand (Chain L) in yellow sticks
+          <span id="viewerPoseLabel" style="color:var(--accent);font-weight:600"></span>
         </p>
         <div class="viewer-wrap">
           <div id="viewerLoading" class="viewer-loading">
@@ -579,6 +584,9 @@ let pollTimer    = null;
 let viewer3d     = null;
 let surfaceShown = false;
 let ligStyleBall = false;
+let posePDBs     = {};   // {poseIndex: complex PDB text} extracted from results ZIP
+let activePose   = 1;    // pose currently shown in the 3D viewer
+const MAX_CLICKABLE_POSES = 9;   // only the first 9 pose tiles switch the viewer
 
 // ── Storage helpers ────────────────────────────────────
 const LS = {
@@ -906,6 +914,10 @@ function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1).replace(/_/g
 async function showResults(jobData) {
   document.getElementById('resultsSection').style.display = 'block';
 
+  // Reset per-job viewer state
+  posePDBs = {};
+  activePose = 1;
+
   // Show best score immediately from job metadata
   const bs = jobData.best_score;
   document.getElementById('bestScore').textContent = bs != null ? bs.toFixed(2) : '—';
@@ -918,6 +930,7 @@ async function showResults(jobData) {
     const pdbResp = await apiFetch(`/api/pdb/${currentJobId}`);
     const pdbText = await pdbResp.text();
     renderViewer(pdbText);
+    setViewerPoseLabel(1);
     // Try to load all pose scores from artifact (for the grid)
     await loadScoresFromArtifact();
   } catch (e) {
@@ -939,6 +952,9 @@ async function loadScoresFromArtifact() {
     const JSZip = await loadJSZip();
     const zip = await JSZip.loadAsync(blob);
 
+    // Cache each pose's complex PDB so tiles can switch the 3D viewer offline
+    await extractPosePDBs(zip);
+
     // Prefer summary.json (has CNN data); fall back to scores.csv
     const summaryFile = Object.keys(zip.files).find(n => n.endsWith('summary.json'));
     if (summaryFile) {
@@ -957,6 +973,16 @@ async function loadScoresFromArtifact() {
   } catch (_) {
     // scores not critical — viewer already loaded
   }
+}
+
+async function extractPosePDBs(zip) {
+  posePDBs = {};
+  const entries = Object.keys(zip.files)
+    .map(n => ({ n, m: n.match(/complex_pose(\d+)\.pdb$/) }))
+    .filter(e => e.m);
+  await Promise.all(entries.map(async ({ n, m }) => {
+    posePDBs[parseInt(m[1], 10)] = await zip.files[n].async('text');
+  }));
 }
 
 async function loadJSZip() {
@@ -999,13 +1025,19 @@ function displayScoresFromSummary(summary) {
   // Poses grid
   const grid = document.getElementById('posesGrid');
   grid.innerHTML = scores.map((s, i) => {
+    const pose = i + 1;
+    const clickable = pose <= MAX_CLICKABLE_POSES && posePDBs[pose];
     let cls = '';
     if (i === 0) cls = 'best-cnn';
-    else if (bestVinaP && (i + 1) === bestVinaP) cls = 'best-vina';
-    const label = i === 0 ? 'Pose 1 ★' : `Pose ${i+1}`;
-    const title = i === 0 ? 'CNN best pose (3D viewer)' :
-                  (bestVinaP && (i+1) === bestVinaP ? 'Best Vina affinity' : '');
-    return `<div class="pose-tile ${cls}" title="${title}">
+    else if (bestVinaP && pose === bestVinaP) cls = 'best-vina';
+    if (clickable) cls += ' clickable';
+    if (pose === activePose) cls += ' active';
+    const label = i === 0 ? 'Pose 1 ★' : `Pose ${pose}`;
+    const title = clickable ? 'Click to show this pose in the 3D viewer'
+                : i === 0 ? 'CNN best pose (3D viewer)'
+                : (bestVinaP && pose === bestVinaP ? 'Best Vina affinity' : '');
+    const click = clickable ? ` onclick="selectPose(${pose})"` : '';
+    return `<div class="pose-tile ${cls.trim()}" data-pose="${pose}" title="${title}"${click}>
               <div class="pn">${label}</div>
               <div class="ps">${s.toFixed(2)}</div>
             </div>`;
@@ -1016,12 +1048,18 @@ function displayScores(scores) {
   if (!scores || !scores.length) return;
   document.getElementById('bestScore').textContent = scores[0].toFixed(2);
   const grid = document.getElementById('posesGrid');
-  grid.innerHTML = scores.map((s, i) =>
-    `<div class="pose-tile${i===0?' best-cnn':''}">
-       <div class="pn">${i===0?'Pose 1 ★':`Pose ${i+1}`}</div>
+  grid.innerHTML = scores.map((s, i) => {
+    const pose = i + 1;
+    const clickable = pose <= MAX_CLICKABLE_POSES && posePDBs[pose];
+    let cls = i === 0 ? 'best-cnn' : '';
+    if (clickable) cls += ' clickable';
+    if (pose === activePose) cls += ' active';
+    const click = clickable ? ` onclick="selectPose(${pose})"` : '';
+    return `<div class="pose-tile ${cls.trim()}" data-pose="${pose}"${click}>
+       <div class="pn">${i===0?'Pose 1 ★':`Pose ${pose}`}</div>
        <div class="ps">${s.toFixed(2)}</div>
-     </div>`
-  ).join('');
+     </div>`;
+  }).join('');
 }
 
 // ── Direct ZIP download ────────────────────────────────
@@ -1069,6 +1107,14 @@ function renderViewer(pdbText) {
   if (viewer3d) { try { viewer3d.clear(); } catch(_) {} viewer3d = null; }
   container.innerHTML = '';
 
+  // Reset overlay toggles — the fresh viewer starts with default styling
+  surfaceShown = false;
+  ligStyleBall = false;
+  const sb = document.getElementById('surfBtn');
+  if (sb) sb.classList.remove('active');
+  const lb = document.getElementById('ligStyleBtn');
+  if (lb) { lb.classList.remove('active'); lb.textContent = '◈ Ball+Stick'; }
+
   viewer3d = $3Dmol.createViewer(container, { backgroundColor: '#1a1a2e', width: W, height: H });
 
   viewer3d.addModel(pdbText, 'pdb');
@@ -1094,6 +1140,21 @@ function resetView() {
   if (!viewer3d) return;
   viewer3d.zoomTo({ chain: 'L' });
   viewer3d.render();
+}
+
+// Switch the 3D viewer to a different pose (from a clicked pose tile)
+function selectPose(n) {
+  if (!posePDBs[n] || n === activePose) return;
+  activePose = n;
+  renderViewer(posePDBs[n]);
+  document.querySelectorAll('#posesGrid .pose-tile').forEach(t =>
+    t.classList.toggle('active', Number(t.dataset.pose) === n));
+  setViewerPoseLabel(n);
+}
+
+function setViewerPoseLabel(n) {
+  const lbl = document.getElementById('viewerPoseLabel');
+  if (lbl) lbl.textContent = ` · Showing Pose ${n}`;
 }
 
 function toggleSurface() {
