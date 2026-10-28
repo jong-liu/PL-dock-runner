@@ -135,17 +135,32 @@
 
   /* Results */
   #resultsSection { display: none; margin-top: 20px; }
-  .score-hero { display: flex; align-items: baseline; gap: 8px; margin-bottom: 16px; }
+  .score-hero { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
   .score-big { font-size: 48px; font-weight: 700; color: var(--primary); line-height: 1; }
   .score-unit { font-size: 16px; color: var(--muted); }
+  .score-cnn-row { font-size: 12px; color: var(--muted); margin-bottom: 8px; display: none; }
+  .score-cnn-row strong { color: var(--fg); }
+  .score-cnn-row .best-vina-badge {
+    display: inline-block; margin-left: 10px; padding: 1px 6px;
+    border: 1px solid var(--border); border-radius: 4px; font-size: 11px;
+  }
+  .method-note {
+    font-size: 11px; color: var(--muted); border-left: 2px solid var(--border);
+    padding: 6px 10px; margin-bottom: 14px; line-height: 1.6;
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+    border-radius: 0 4px 4px 0; display: none;
+  }
+  .method-note strong { color: var(--fg); }
   .poses-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
                 gap: 6px; margin-bottom: 20px; }
   .pose-tile { background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
-               padding: 6px 4px; text-align: center; }
+               padding: 6px 4px; text-align: center; cursor: default; }
   .pose-tile .pn { font-size: 10px; color: var(--muted); }
   .pose-tile .ps { font-size: 13px; font-weight: 600; }
-  .pose-tile.best { border-color: var(--accent);
+  .pose-tile.best-cnn { border-color: var(--accent);
                     background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .pose-tile.best-vina { border-color: #e6a817;
+                    background: color-mix(in srgb, #e6a817 8%, transparent); }
 
   /* 3D viewer */
   .viewer-wrap { position: relative; height: 480px; border-radius: 8px; overflow: hidden;
@@ -431,7 +446,22 @@
       <!-- Score summary -->
       <div class="score-hero">
         <div class="score-big" id="bestScore">—</div>
-        <div class="score-unit">kcal/mol (best pose)</div>
+        <div class="score-unit">kcal/mol · Pose 1 (Vina)</div>
+      </div>
+      <div class="score-cnn-row" id="cnnRow">
+        CNN pose score: <strong id="cnnPoseScore">—</strong>
+        &nbsp;·&nbsp;
+        CNN affinity: <strong id="cnnAffinity">—</strong>
+        <span id="bestVinaSpan" style="display:none">
+          <span class="best-vina-badge">
+            Best Vina: <strong id="bestVinaScore">—</strong> (Pose <span id="bestVinaPose">—</span>)
+          </span>
+        </span>
+      </div>
+      <div class="method-note" id="methodNote">
+        <strong>Interpreting these scores (initial screening):</strong><br>
+        • <strong>3D viewer shows Pose 1</strong> — highest CNN pose score = most likely true binding mode.<br>
+        • <strong>Compare binding strength</strong> → prefer <em>CNN affinity</em> (Pose 1) or the most negative Vina affinity across all poses.
       </div>
       <div class="poses-grid" id="posesGrid"></div>
 
@@ -903,12 +933,20 @@ function parsePDBScores(pdbText) {
 }
 
 async function loadScoresFromArtifact() {
-  // Download ZIP, extract scores.csv
   try {
     const resp = await apiFetch(`/api/download/${currentJobId}`);
     const blob = await resp.blob();
     const JSZip = await loadJSZip();
     const zip = await JSZip.loadAsync(blob);
+
+    // Prefer summary.json (has CNN data); fall back to scores.csv
+    const summaryFile = Object.keys(zip.files).find(n => n.endsWith('summary.json'));
+    if (summaryFile) {
+      const txt = await zip.files[summaryFile].async('text');
+      const summary = JSON.parse(txt);
+      displayScoresFromSummary(summary);
+      return;
+    }
     const csvFile = Object.keys(zip.files).find(n => n.endsWith('scores.csv'));
     if (csvFile) {
       const csv = await zip.files[csvFile].async('text');
@@ -932,13 +970,55 @@ async function loadJSZip() {
   });
 }
 
+function displayScoresFromSummary(summary) {
+  const scores   = summary.all_scores || [];
+  const poses    = summary.all_poses  || [];
+  const hasCNN   = poses.length > 0 && poses[0].cnn_score != null;
+  const bestVina = summary.best_vina_affinity;
+  const bestVinaP = summary.best_vina_pose;
+
+  if (!scores.length) return;
+
+  // Primary score: Pose 1 Vina affinity
+  document.getElementById('bestScore').textContent = scores[0].toFixed(2);
+
+  // CNN row
+  if (hasCNN) {
+    const cnnRow = document.getElementById('cnnRow');
+    cnnRow.style.display = 'block';
+    document.getElementById('cnnPoseScore').textContent = poses[0].cnn_score.toFixed(3);
+    document.getElementById('cnnAffinity').textContent  = poses[0].cnn_affinity.toFixed(2);
+    if (bestVinaP && bestVinaP !== 1) {
+      document.getElementById('bestVinaSpan').style.display = 'inline';
+      document.getElementById('bestVinaScore').textContent = bestVina.toFixed(2);
+      document.getElementById('bestVinaPose').textContent  = bestVinaP;
+    }
+    document.getElementById('methodNote').style.display = 'block';
+  }
+
+  // Poses grid
+  const grid = document.getElementById('posesGrid');
+  grid.innerHTML = scores.map((s, i) => {
+    let cls = '';
+    if (i === 0) cls = 'best-cnn';
+    else if (bestVinaP && (i + 1) === bestVinaP) cls = 'best-vina';
+    const label = i === 0 ? 'Pose 1 ★' : `Pose ${i+1}`;
+    const title = i === 0 ? 'CNN best pose (3D viewer)' :
+                  (bestVinaP && (i+1) === bestVinaP ? 'Best Vina affinity' : '');
+    return `<div class="pose-tile ${cls}" title="${title}">
+              <div class="pn">${label}</div>
+              <div class="ps">${s.toFixed(2)}</div>
+            </div>`;
+  }).join('');
+}
+
 function displayScores(scores) {
   if (!scores || !scores.length) return;
   document.getElementById('bestScore').textContent = scores[0].toFixed(2);
   const grid = document.getElementById('posesGrid');
   grid.innerHTML = scores.map((s, i) =>
-    `<div class="pose-tile${i===0?' best':''}">
-       <div class="pn">Pose ${i+1}</div>
+    `<div class="pose-tile${i===0?' best-cnn':''}">
+       <div class="pn">${i===0?'Pose 1 ★':`Pose ${i+1}`}</div>
        <div class="ps">${s.toFixed(2)}</div>
      </div>`
   ).join('');
