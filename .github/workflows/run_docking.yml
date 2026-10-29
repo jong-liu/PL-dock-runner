@@ -3,6 +3,11 @@ name: Run Docking
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'single docking or screen (ligand library)'
+        required: false
+        default: 'single'
+        type: string
       pdb_id:
         description: 'PDB ID (e.g. 1HPV, 8VBU, 3TE4)'
         required: true
@@ -36,12 +41,17 @@ on:
         required: false
         default: ''
         type: string
+      ligand_library:
+        description: 'Server path to uploaded .sdf library (screen mode)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   docking:
-    name: Dock ${{ inputs.pdb_id }} / ${{ inputs.ligand_resname }}
+    name: ${{ inputs.mode == 'screen' && 'Screen' || 'Dock' }} ${{ inputs.pdb_id }} / ${{ inputs.ligand_resname }}
     runs-on: [self-hosted, linux]
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Pull latest pipeline code
@@ -51,25 +61,44 @@ jobs:
 
       - name: Run PyRx pipeline
         run: |
-          conda run -n pyrx \
-            python /home/jong/pyrx/pyrx/scripts/run_pipeline.py \
-              --pdb            "${{ inputs.pdb_id }}" \
-              --ligand         "${{ inputs.ligand_resname }}" \
-              --pdb-file       "${{ inputs.pdb_file }}" \
-              --ligand-file    "${{ inputs.ligand_file }}" \
-              --box            "${{ inputs.box_size }}" \
-              --exhaustiveness "${{ inputs.exhaustiveness }}" \
-              --num-modes      "${{ inputs.num_modes }}" \
-              --out            "/tmp/pyrx-job-${{ github.run_id }}"
+          OUT="/tmp/pyrx-job-${{ github.run_id }}"
+          if [ "${{ inputs.mode }}" = "screen" ]; then
+            conda run -n pyrx \
+              python /home/jong/pyrx/pyrx/scripts/run_screen.py \
+                --pdb             "${{ inputs.pdb_id }}" \
+                --pdb-file        "${{ inputs.pdb_file }}" \
+                --ligand-library  "${{ inputs.ligand_library }}" \
+                --pocket-resname  "${{ inputs.ligand_resname }}" \
+                --box             "${{ inputs.box_size }}" \
+                --exhaustiveness  "${{ inputs.exhaustiveness }}" \
+                --num-modes       "${{ inputs.num_modes }}" \
+                --out             "$OUT"
+          else
+            conda run -n pyrx \
+              python /home/jong/pyrx/pyrx/scripts/run_pipeline.py \
+                --pdb            "${{ inputs.pdb_id }}" \
+                --ligand         "${{ inputs.ligand_resname }}" \
+                --pdb-file       "${{ inputs.pdb_file }}" \
+                --ligand-file    "${{ inputs.ligand_file }}" \
+                --box            "${{ inputs.box_size }}" \
+                --exhaustiveness "${{ inputs.exhaustiveness }}" \
+                --num-modes      "${{ inputs.num_modes }}" \
+                --out            "$OUT"
+          fi
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: docking-${{ inputs.pdb_id }}-${{ inputs.ligand_resname }}-run${{ github.run_id }}
+          name: docking-${{ inputs.mode }}-${{ inputs.pdb_id }}-run${{ github.run_id }}
           path: /tmp/pyrx-job-${{ github.run_id }}/
           retention-days: 14
           if-no-files-found: error
 
       - name: Cleanup temp files
         if: always()
-        run: rm -rf /tmp/pyrx-job-${{ github.run_id }}
+        run: |
+          SRC="/tmp/pyrx-job-${{ github.run_id }}/progress.log"
+          DST="/home/jong/pyrx-web-backend/uploads/progress"
+          mkdir -p "$DST"
+          [ -f "$SRC" ] && cp "$SRC" "$DST/${{ github.run_id }}.log"
+          rm -rf /tmp/pyrx-job-${{ github.run_id }}
