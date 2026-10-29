@@ -22,4 +22,4 @@ Submit a PDB ID and ligand residue name → AutoDock Vina runs on a private serv
 
 ## License
 
-Web interface: MIT. Core docking engine: see [AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina).
+Web interface: MIT. Core docking engine: see [AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina); [gnina 1.3](https://github.com/gnina/gnina).
