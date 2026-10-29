@@ -168,6 +168,12 @@
   .del-btn { background: none; border: none; color: var(--muted); cursor: pointer;
              font-size: 14px; line-height: 1; padding: 4px 6px; border-radius: 4px; }
   .del-btn:hover { color: #cf222e; background: color-mix(in srgb, #cf222e 12%, transparent); }
+  #screenResults .screen-row.clickable { cursor: pointer; }
+  #screenResults .screen-row.clickable:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  #screenResults .screen-row.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .vs-chip { display:inline-block; font-size:10px; font-weight:700; font-family:monospace;
+             background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
+             padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: 1px; }
 
   /* 3D viewer */
   .viewer-wrap { position: relative; height: 480px; border-radius: 8px; overflow: hidden;
@@ -332,6 +338,10 @@
   <!-- Docking form -->
   <div class="card">
     <h2>Submit Docking Job</h2>
+    <div class="mode-tabs" style="margin-bottom:14px">
+      <button class="mode-tab active" id="modeTabSingle" onclick="setScreenMode(false)">Single ligand</button>
+      <button class="mode-tab"        id="modeTabScreen" onclick="setScreenMode(true)">Virtual screening</button>
+    </div>
     <div class="form-row">
       <!-- PDB field -->
       <div class="field" style="flex:2">
@@ -354,8 +364,8 @@
         </div>
         <span class="hint" id="pdbHint">RCSB Protein Data Bank identifier</span>
       </div>
-      <!-- Ligand field -->
-      <div class="field" style="flex:2">
+      <!-- Ligand field (single mode) -->
+      <div class="field" style="flex:2" id="ligandField">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
           <label style="margin:0">Ligand <span style="color:var(--error)">*</span></label>
           <div class="mode-tabs">
@@ -374,6 +384,20 @@
           <div class="uz-name" id="ligZoneName"></div>
         </div>
         <span class="hint" id="ligHint">3-character PDB residue code of co-crystal ligand</span>
+      </div>
+      <!-- Ligand library field (screen mode) -->
+      <div class="field" style="flex:2" id="libraryField" hidden>
+        <label>Ligand library (.sdf) <span style="color:var(--error)">*</span></label>
+        <div id="libUploadZone" class="upload-zone"
+             onclick="document.getElementById('libraryFileInput').click()"
+             ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="handleDrop(event,'libraryFileInput')">
+          <input type="file" id="libraryFileInput" accept=".sdf" onchange="onFileChosen(this,'libZoneName')">
+          <div class="uz-label">📂 <span>Click to browse</span> or drag & drop</div>
+          <div class="uz-name" id="libZoneName"></div>
+        </div>
+        <span class="hint">Multi-molecule .sdf, up to 50 ligands. Invalid entries are skipped &amp; reported.</span>
       </div>
     </div>
     <button class="adv-toggle" onclick="toggleAdv()" id="advToggle">▶ Advanced settings</button>
@@ -471,6 +495,7 @@
         • <strong>Compare binding strength</strong> → prefer <em>CNN affinity</em> (Pose 1) or the most negative Vina affinity across all poses.
       </div>
       <div class="poses-grid" id="posesGrid"></div>
+      <div id="screenResults" hidden></div>
 
       <!-- Download button -->
       <button class="btn-dl" id="dlBtn" onclick="downloadZip()" disabled>
@@ -591,6 +616,7 @@ let ligStyleBall = false;
 let spinning     = false;
 let posePDBs     = {};   // {poseIndex: complex PDB text} extracted from results ZIP
 let activePose   = 1;    // pose currently shown in the 3D viewer
+let _screenSkipped = []; // skipped library entries for the current screen job
 const MAX_CLICKABLE_POSES = 9;   // only the first 9 pose tiles switch the viewer
 
 // ── Storage helpers ────────────────────────────────────
@@ -719,7 +745,16 @@ window.addEventListener('load', () => {
 });
 
 // ── Input mode helpers ─────────────────────────────────
-let _pdbMode = 'id', _ligMode = 'resname';
+let _pdbMode = 'id', _ligMode = 'resname', _screenMode = false;
+
+function setScreenMode(on) {
+  _screenMode = on;
+  document.getElementById('modeTabSingle').classList.toggle('active', !on);
+  document.getElementById('modeTabScreen').classList.toggle('active', on);
+  document.getElementById('ligandField').hidden  = on;
+  document.getElementById('libraryField').hidden = !on;
+  document.getElementById('submitBtn').textContent = on ? '▶ Run Screening' : '▶ Run Docking';
+}
 
 function setPdbMode(mode) {
   _pdbMode = mode;
@@ -783,14 +818,19 @@ async function submitJob() {
   const ligand   = document.getElementById('ligandInput').value.trim().toUpperCase();
   const pdbFile  = document.getElementById('pdbFileInput').files[0];
   const ligFile  = document.getElementById('ligandFileInput').files[0];
+  const libFile  = document.getElementById('libraryFileInput').files[0];
   const box      = document.getElementById('boxSelect').value;
   const exh      = document.getElementById('exhaSelect').value;
   const modes    = document.getElementById('modesSelect').value;
 
   if (_pdbMode === 'id'   && !pdb)     return showFormError('PDB ID is required.');
   if (_pdbMode === 'file' && !pdbFile) return showFormError('Please select a .pdb receptor file.');
-  if (_ligMode === 'resname' && !ligand)  return showFormError('Ligand resname is required.');
-  if (_ligMode === 'file'   && !ligFile)  return showFormError('Please select a ligand file.');
+  if (_screenMode) {
+    if (!libFile) return showFormError('Please select a .sdf ligand library (≤50 molecules).');
+  } else {
+    if (_ligMode === 'resname' && !ligand)  return showFormError('Ligand resname is required.');
+    if (_ligMode === 'file'   && !ligFile)  return showFormError('Please select a ligand file.');
+  }
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true; btn.textContent = '⏳ Submitting…';
@@ -804,12 +844,29 @@ async function submitJob() {
 
   try {
     const token = getToken();
+    const authH = token ? { 'Authorization': `Bearer ${token}` } : {};
     let fetchOpts;
-    const label = (_pdbMode === 'file' ? (pdbFile.name) : pdb)
-                + ' / '
-                + (_ligMode === 'file' ? (ligFile.name) : ligand);
+    const receptorLbl = _pdbMode === 'file' ? pdbFile.name : pdb;
+    const label = _screenMode
+      ? `${receptorLbl} / ${libFile.name} (screen)`
+      : `${receptorLbl} / ${_ligMode === 'file' ? ligFile.name : ligand}`;
 
-    if (_pdbMode === 'file' || _ligMode === 'file') {
+    if (_screenMode) {
+      const fd = new FormData();
+      fd.append('mode',           'screen');
+      fd.append('pdb_id',         _pdbMode === 'id' ? pdb : '');
+      fd.append('ligand_resname', '');
+      fd.append('box_size',       box);
+      fd.append('exhaustiveness', exh);
+      fd.append('num_modes',      modes);
+      if (pdbFile) fd.append('pdb_file', pdbFile);
+      fd.append('ligand_library', libFile);
+      fetchOpts = {
+        method: 'POST',
+        headers: { 'ngrok-skip-browser-warning': 'true', ...authH },
+        body: fd
+      };
+    } else if (_pdbMode === 'file' || _ligMode === 'file') {
       const fd = new FormData();
       fd.append('pdb_id',           _pdbMode === 'id'   ? pdb    : '');
       fd.append('ligand_resname',   _ligMode === 'resname' ? ligand : '');
@@ -923,14 +980,31 @@ async function showResults(jobData) {
   posePDBs = {};
   activePose = 1;
 
+  // Enable download button
+  document.getElementById('dlBtn').disabled = false;
+
+  // Reset mode-specific panels (viewer, grids)
+  document.getElementById('posesGrid').hidden = false;
+  document.getElementById('screenResults').hidden = true;
+  document.getElementById('viewerPoseLabel').textContent = '';
+
   // Show best score immediately from job metadata
   const bs = jobData.best_score;
   document.getElementById('bestScore').textContent = bs != null ? bs.toFixed(2) : '—';
 
-  // Enable download button
-  document.getElementById('dlBtn').disabled = false;
+  // ── Virtual-screening job: ranked hit table + per-hit 3D viewer ──
+  if (jobData.type === 'screen') {
+    document.querySelector('.score-unit').textContent = 'kcal/mol · Top hit (Vina)';
+    document.getElementById('cnnRow').style.display = 'none';
+    document.getElementById('methodNote').style.display = 'none';
+    document.getElementById('posesGrid').hidden = true;
+    document.getElementById('screenResults').hidden = false;
+    await loadScreenResults();
+    return;
+  }
+  document.querySelector('.score-unit').textContent = 'kcal/mol · Pose 1 (Vina)';
 
-  // Load PDB and render 3D
+  // Load PDB and render 3D (single docking)
   try {
     const pdbResp = await apiFetch(`/api/pdb/${currentJobId}`);
     const pdbText = await pdbResp.text();
@@ -943,6 +1017,116 @@ async function showResults(jobData) {
     el.innerHTML = `<span style="color:#f85149">⚠ ${e.message}</span>`;
     el.style.display = 'flex';
   }
+}
+
+// ── Virtual-screening results ──────────────────────────
+async function loadScreenResults() {
+  const sr = document.getElementById('screenResults');
+  sr.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:8px 0">Loading ranking…</p>';
+  const vload = document.getElementById('viewerLoading');
+  vload.innerHTML = '<div class="spinner"></div><span>Loading hits…</span>';
+  vload.style.display = 'flex';
+  try {
+    const resp = await apiFetch(`/api/download/${currentJobId}`);
+    const blob = await resp.blob();
+    const JSZip = await loadJSZip();
+    const zip = await JSZip.loadAsync(blob);
+
+    const rjName = Object.keys(zip.files).find(n => n.endsWith('ranking.json'));
+    const ranking = rjName ? JSON.parse(await zip.files[rjName].async('text')) : null;
+
+    // Cache each kept hit complex, keyed by its rank
+    posePDBs = {};
+    const entries = Object.keys(zip.files)
+      .map(n => ({ n, m: n.match(/complex_(\d+)_.*\.pdb$/) })).filter(e => e.m);
+    await Promise.all(entries.map(async ({ n, m }) => {
+      posePDBs[parseInt(m[1], 10)] = await zip.files[n].async('text');
+    }));
+
+    renderScreenTable(ranking);
+
+    const top = ranking && ranking.hits && ranking.hits[0];
+    if (top && posePDBs[top.rank]) {
+      activePose = top.rank;
+      renderViewer(posePDBs[top.rank]);
+      setViewerHitLabel(top.name);
+      markActiveHit(top.rank);
+    } else {
+      vload.innerHTML = '<span style="color:var(--muted)">No 3D structure kept for hits</span>';
+      vload.style.display = 'flex';
+    }
+  } catch (e) {
+    sr.innerHTML = `<div class="alert alert-error">Could not load screening results: ${e.message}</div>`;
+    vload.innerHTML = `<span style="color:#f85149">⚠ ${e.message}</span>`;
+    vload.style.display = 'flex';
+  }
+}
+
+function renderScreenTable(ranking) {
+  const sr = document.getElementById('screenResults');
+  if (!ranking || !ranking.hits || !ranking.hits.length) {
+    sr.innerHTML = '<p style="color:var(--muted);font-size:13px">No ranked hits in results.</p>';
+    return;
+  }
+  const v = ranking.validation || {};
+  _screenSkipped = v.skipped || [];
+  const nSkip = _screenSkipped.length;
+  const rows = ranking.hits.map(h => {
+    const clickable = !!posePDBs[h.rank];
+    const vina = h.best_vina != null ? h.best_vina.toFixed(2) : '—';
+    const cnn  = h.cnn_score != null ? h.cnn_score.toFixed(3) : '—';
+    const name = (h.name || '').replace(/'/g, '');
+    const cls  = 'screen-row' + (clickable ? ' clickable' : '');
+    const onclick = clickable ? ` onclick="selectHit(${h.rank},'${name}')"` : '';
+    return `<tr class="${cls}" data-rank="${h.rank}"${onclick}>
+      <td style="width:34px">${h.rank}</td>
+      <td style="font-family:monospace">${h.name||'?'}${clickable ? ' <span title="3D available">🔎</span>' : ''}</td>
+      <td style="font-weight:600;color:var(--primary)">${vina}</td>
+      <td>${cnn}</td>
+      <td style="color:var(--muted)">${h.num_poses ?? '—'}</td>
+    </tr>`;
+  }).join('');
+  const skipLink = nSkip
+    ? ` · <a href="#" onclick="showSkipped(event)" style="color:var(--accent)">${nSkip} skipped</a>`
+    : ' · 0 skipped';
+  sr.innerHTML = `
+    <div style="font-size:13px;color:var(--muted);margin:0 0 10px">
+      <strong style="color:var(--primary)">${ranking.n_valid}</strong> ligand(s) ranked by best Vina affinity${skipLink}
+      · top ${ranking.top_n} have 3D structures (🔎 click a row)
+    </div>
+    <div style="overflow-x:auto">
+      <table class="user-table">
+        <thead><tr><th>#</th><th>Ligand</th><th>Best Vina</th><th>CNN</th><th>Poses</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function selectHit(rank, name) {
+  if (!posePDBs[rank]) return;
+  activePose = rank;
+  renderViewer(posePDBs[rank]);
+  setViewerHitLabel(name);
+  markActiveHit(rank);
+  document.querySelector('.viewer-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function markActiveHit(rank) {
+  document.querySelectorAll('#screenResults .screen-row').forEach(r =>
+    r.classList.toggle('active', Number(r.dataset.rank) === rank));
+}
+
+function setViewerHitLabel(name) {
+  const lbl = document.getElementById('viewerPoseLabel');
+  if (lbl) lbl.textContent = name ? ` · ${name}` : '';
+}
+
+function showSkipped(e) {
+  e.preventDefault();
+  const s = _screenSkipped || [];
+  alert(s.length
+    ? 'Skipped library entries:\n' + s.map(x => `#${(x.index ?? 0) + 1} ${x.name || ''} — ${x.reason}`).join('\n')
+    : 'No entries were skipped.');
 }
 
 function parsePDBScores(pdbText) {
@@ -1335,7 +1519,7 @@ async function loadJobHistory() {
         ? 'style="background:color-mix(in srgb,var(--accent) 8%,transparent)"' : '';
       return `<tr class="ex-row" ${active}
                 onclick="loadJobResult('${j.job_id}','${j.pdb_id}','${j.ligand}')">
-        <td style="font-family:monospace;font-size:12px;font-weight:600">${j.pdb_id||'?'} / ${j.ligand||'?'}</td>
+        <td style="font-family:monospace;font-size:12px;font-weight:600">${j.pdb_id||'?'} / ${j.ligand||'?'}${j.type==='screen'?`<span class="vs-chip">VS${j.n_ligands?' '+j.n_ligands:''}</span>`:''}</td>
         <td style="color:var(--muted);font-size:12px;white-space:nowrap">${date}</td>
         <td>${statusBadge}</td>
         <td style="font-weight:600;color:var(--primary);font-size:13px">${score}</td>
