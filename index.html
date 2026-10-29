@@ -427,7 +427,7 @@
              ondragover="event.preventDefault();this.classList.add('drag-over')"
              ondragleave="this.classList.remove('drag-over')"
              ondrop="handleDrop(event,'ligandFileInput')">
-          <input type="file" id="ligandFileInput" accept=".mol2,.sdf,.pdb" onchange="onFileChosen(this,'ligZoneName')">
+          <input type="file" id="ligandFileInput" accept=".mol,.mol2,.sdf,.pdb" onchange="onFileChosen(this,'ligZoneName')">
           <div class="uz-label">📂 <span>Click to browse</span> or drag & drop</div>
           <div class="uz-name" id="ligZoneName"></div>
         </div>
@@ -832,7 +832,7 @@ function setLigMode(mode) {
   document.getElementById('ligUploadZone').hidden    = (mode === 'resname');
   document.getElementById('ligHint').textContent     =
     mode === 'resname' ? '3-character PDB residue code of co-crystal ligand'
-                       : 'Accepted formats: .mol2, .sdf, .pdb';
+                       : 'Accepted formats: .mol, .mol2, .sdf, .pdb';
 }
 
 function onFileChosen(input, nameId) {
