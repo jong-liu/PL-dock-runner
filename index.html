@@ -308,6 +308,13 @@
   .status-timeline { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border);
                      padding-right: 16px; }
   .status-main { flex: 1; min-width: 0; }
+  .fail-reason { margin-top: 10px; background: color-mix(in srgb, var(--error) 8%, transparent);
+                 border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
+                 border-left: 3px solid var(--error); border-radius: 6px; padding: 9px 12px;
+                 font-size: 12.5px; color: var(--text); line-height: 1.55; }
+  .fail-reason .fr-head { font-weight: 700; color: var(--error); margin-bottom: 3px; }
+  .fail-reason code { font-family: monospace; font-size: 11.5px; word-break: break-word; }
+  .fail-reason .fr-hint { margin-top: 6px; color: var(--muted); font-size: 11.5px; }
   @media (max-width: 560px) {
     .status-timeline { width: 100%; border-right: none; border-bottom: 1px solid var(--border);
                        padding-right: 0; padding-bottom: 14px; }
@@ -495,6 +502,9 @@
           <div class="spinner" id="spinner"></div>
           <div id="statusText" style="font-size:14px"></div>
         </div>
+
+        <!-- Failure reason (visible when a job fails) -->
+        <div id="failReason" class="fail-reason" hidden></div>
 
         <!-- Pipeline progress log (visible while running) -->
         <div id="progressLog" hidden
@@ -990,6 +1000,7 @@ async function pollStatus() {
     renderProgressLog(progressLines);
     document.getElementById('progressLog').hidden = !progressLines.length;
     document.getElementById('cancelBtn').hidden   = !active;
+    document.getElementById('failReason').hidden  = true;
 
     if (active) {
       setBadge(s === 'queued' ? 'queued' : 'running', label);
@@ -1004,6 +1015,16 @@ async function pollStatus() {
       setBadge(c === 'cancelled' ? 'cancelled' : 'failure',
                `${capitalize(c || s)} — ${data.pdb_id} / ${data.ligand}`);
       document.getElementById('spinner').style.display = 'none';
+      // Pull the pipeline log + show why it failed
+      if (data.run_id) {
+        try {
+          const pr = await apiFetch(`/api/progress/${currentJobId}`);
+          const lines = (await pr.json()).lines || [];
+          renderProgressLog(lines);
+          document.getElementById('progressLog').hidden = !lines.length;
+        } catch { /* ignore */ }
+      }
+      showFailReason(data);
       loadJobHistory();
     }
   } catch (e) {
@@ -1019,6 +1040,31 @@ function setBadge(state, text) {
     `<span class="badge ${cls[state]||'badge-queued'}">${capitalize(state)}</span>&nbsp; ${text}`;
 }
 function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1).replace(/_/g,' ') : ''; }
+
+// Show a concise failure reason (from /api/status `error`) under the status badge
+function showFailReason(data) {
+  const el = document.getElementById('failReason');
+  if (!el) return;
+  const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const reason = (data.error || '').trim();
+  let hint = '';
+  if (/multi-?model|multiple models/i.test(reason))
+    hint = 'The uploaded ligand file contains more than one molecule/conformer. Provide a single-molecule file (the pipeline now keeps the first model automatically — re-run to retry).';
+  else if (/pocket|fpocket|no scores|binding site/i.test(reason))
+    hint = 'No binding pocket or docking pose could be determined — check the ligand resname / uploaded structure.';
+  else if (/obabel|parse|convert/i.test(reason))
+    hint = 'A structure file could not be parsed — verify the uploaded PDB/ligand format.';
+  else if (data.conclusion === 'cancelled')
+    hint = 'This job was cancelled.';
+  else
+    hint = 'See the pipeline log below for details.';
+
+  el.innerHTML =
+    `<div class="fr-head">⚠ Why it failed</div>` +
+    (reason ? `<code>${esc(reason)}</code>` : 'No reason was recorded for this run.') +
+    `<div class="fr-hint">${hint}</div>`;
+  el.hidden = false;
+}
 
 // ── Show results ───────────────────────────────────────
 async function showResults(jobData) {
@@ -1932,8 +1978,9 @@ async function loadJobResult(jobId, pdbId, ligand) {
     const data = await resp.json();
     const active = data.status !== 'completed';
 
+    const failed = data.status === 'completed' && data.conclusion !== 'success';
     let progressLines = [];
-    if (data.run_id && active) {
+    if (data.run_id && (active || failed)) {   // show the pipeline log while running or after a failure
       try { progressLines = (await (await apiFetch(`/api/progress/${jobId}`)).json()).lines || []; }
       catch { /* no log available */ }
     }
@@ -1941,12 +1988,14 @@ async function loadJobResult(jobId, pdbId, ligand) {
     renderProgressLog(progressLines);
     document.getElementById('progressLog').hidden = !progressLines.length;
     document.getElementById('cancelBtn').hidden   = !active;
+    document.getElementById('failReason').hidden  = true;
 
     if (data.status === 'completed' && data.conclusion === 'success') {
       setBadge('success', `Complete — ${pdbId} / ${ligand}`);
       await showResults(data);
     } else if (data.status === 'completed') {
       setBadge('failure', `${capitalize(data.conclusion || 'failed')} — ${pdbId} / ${ligand}`);
+      showFailReason(data);
     } else if (!data.run_id || data.status === 'queued') {
       setBadge('queued', `Queued — ${pdbId} / ${ligand}`);
       document.getElementById('spinner').style.display = 'block';
