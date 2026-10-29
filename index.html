@@ -175,6 +175,47 @@
              background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
              padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: 1px; }
 
+  /* Interaction (H-bond) panel */
+  #interPanel { margin: 18px 0 0; }
+  #interPanel h3 { font-size: 13px; font-weight: 600; color: var(--primary); margin: 0 0 8px;
+                   border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .inter-summary { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; }
+  .inter-summary strong { color: var(--primary); }
+  .hb-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .hb-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 8px;
+                 border-bottom: 1px solid var(--border); }
+  .hb-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .hb-table tr:last-child td { border-bottom: none; }
+  .atom-tag { font-family: monospace; font-size: 11px; background: var(--bg);
+              border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  .dist-pill { display: inline-block; font-weight: 600; font-size: 11px; padding: 1px 7px;
+               border-radius: 999px; }
+  .hb-strong { background: color-mix(in srgb, #2da44e 20%, transparent); color: #1a7f37; }
+  .hb-medium { background: color-mix(in srgb, #bf8700 22%, transparent); color: #9a6700; }
+  .hb-weak   { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
+  .mut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 0; }
+  @media (max-width: 640px) { .mut-grid { grid-template-columns: 1fr; } }
+  .mut-item { border: 1px solid var(--border); border-left-width: 3px; border-radius: 0 6px 6px 0;
+              padding: 8px 10px; background: var(--bg); }
+  .mut-item.priority-high { border-left-color: #cf222e; }
+  .mut-item.priority-mid  { border-left-color: #bf8700; }
+  .mut-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .mut-resname { font-weight: 600; font-size: 13px; color: var(--text); }
+  .mut-dist { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .priority-badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .badge-high { background: color-mix(in srgb, #cf222e 18%, transparent); color: #cf222e; }
+  .badge-mid  { background: color-mix(in srgb, #bf8700 20%, transparent); color: #9a6700; }
+  .mut-role { font-size: 11.5px; color: var(--muted); margin: 4px 0 2px; }
+  .mut-sugg { font-size: 12px; color: var(--text); }
+  .res-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font-size: 11px; font-family: monospace; border: 1px solid var(--border); border-radius: 999px;
+          padding: 2px 9px; cursor: pointer; transition: background .12s, box-shadow .12s; background: var(--surface); }
+  .chip:hover { box-shadow: 0 0 0 1px var(--accent); }
+  .chip-hb { background: color-mix(in srgb, #e6a817 16%, transparent); border-color: #e6a817; color: var(--text); }
+  .chip-contact { color: var(--muted); }
+  .inter-sub { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; }
+  .inter-credit { font-size: 10.5px; color: var(--muted); margin: 12px 0 0; opacity: .8; }
+
   /* 3D viewer */
   .viewer-wrap { position: relative; height: 480px; border-radius: 8px; overflow: hidden;
                  border: 1px solid var(--border); background: #1a1a2e; margin: 16px 0 0; }
@@ -497,6 +538,9 @@
       <div class="poses-grid" id="posesGrid"></div>
       <div id="screenResults" hidden></div>
 
+      <!-- Protein–ligand interaction analysis (H-bonds + mutation hotspots) -->
+      <div id="interPanel" hidden></div>
+
       <!-- Download button -->
       <button class="btn-dl" id="dlBtn" onclick="downloadZip()" disabled>
         ⬇ Download Results (ZIP)
@@ -521,12 +565,14 @@
           <div class="viewer-legend">
             <div><span class="legend-dot" style="background:#4a90d9"></span> Receptor (Chain A)</div>
             <div><span class="legend-dot" style="background:#ffffff"></span> Ligand (Chain L)</div>
+            <div id="legendHB" style="display:none"><span class="legend-dot" style="background:#facc15"></span> H-bond</div>
           </div>
           <div class="viewer-controls">
             <button class="vc-btn" onclick="resetView()">⟳ Reset</button>
             <button class="vc-btn" id="rotateBtn" onclick="toggleRotate()">↻ Rotate</button>
             <button class="vc-btn" id="surfBtn" onclick="toggleSurface()">◎ Surface</button>
             <button class="vc-btn" id="ligStyleBtn" onclick="toggleLigStyle()">◈ Ball+Stick</button>
+            <button class="vc-btn" id="interBtn" onclick="toggleInteractions()" style="display:none">⚡ H-bonds</button>
             <button class="vc-btn" onclick="takeSnapshot()">📷 Snapshot</button>
           </div>
         </div>
@@ -618,6 +664,8 @@ let posePDBs     = {};   // {poseIndex: complex PDB text} extracted from results
 let activePose   = 1;    // pose currently shown in the 3D viewer
 let _screenSkipped = []; // skipped library entries for the current screen job
 const MAX_CLICKABLE_POSES = 9;   // only the first 9 pose tiles switch the viewer
+let interShown       = false; // H-bond overlay toggle (persists across pose switches)
+let poseInteractions = {};    // {pose: {hbonds, nearby}} — analysed lazily, cached
 
 // ── Storage helpers ────────────────────────────────────
 const LS = {
@@ -979,6 +1027,13 @@ async function showResults(jobData) {
   // Reset per-job viewer state
   posePDBs = {};
   activePose = 1;
+  poseInteractions = {};
+  interShown = false;
+  document.getElementById('interPanel').hidden = true;
+  const _ib = document.getElementById('interBtn');
+  if (_ib) { _ib.style.display = 'none'; _ib.classList.remove('active'); }
+  const _lhb = document.getElementById('legendHB');
+  if (_lhb) _lhb.style.display = 'none';
 
   // Enable download button
   document.getElementById('dlBtn').disabled = false;
@@ -1012,6 +1067,8 @@ async function showResults(jobData) {
     setViewerPoseLabel(1);
     // Try to load all pose scores from artifact (for the grid)
     await loadScoresFromArtifact();
+    // H-bond / mutation analysis for the shown pose (needs posePDBs from the ZIP)
+    renderInteractions(activePose);
   } catch (e) {
     const el = document.getElementById('viewerLoading');
     el.innerHTML = `<span style="color:#f85149">⚠ ${e.message}</span>`;
@@ -1051,6 +1108,7 @@ async function loadScreenResults() {
       renderViewer(posePDBs[top.rank]);
       setViewerHitLabel(top.name);
       markActiveHit(top.rank);
+      renderInteractions(top.rank);
     } else {
       vload.innerHTML = '<span style="color:var(--muted)">No 3D structure kept for hits</span>';
       vload.style.display = 'flex';
@@ -1108,6 +1166,7 @@ function selectHit(rank, name) {
   renderViewer(posePDBs[rank]);
   setViewerHitLabel(name);
   markActiveHit(rank);
+  renderInteractions(rank);
   document.querySelector('.viewer-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -1306,6 +1365,11 @@ function renderViewer(pdbText) {
   if (lb) { lb.classList.remove('active'); lb.textContent = '◈ Ball+Stick'; }
   const rb = document.getElementById('rotateBtn');
   if (rb) rb.classList.remove('active');
+  // H-bond overlay persists across pose switches — keep interShown, just sync the button
+  const ib = document.getElementById('interBtn');
+  if (ib) ib.classList.toggle('active', interShown);
+  const legHB = document.getElementById('legendHB');
+  if (legHB) legHB.style.display = 'none';
 
   viewer3d = $3Dmol.createViewer(container, { backgroundColor: '#1a1a2e', width: W, height: H });
 
@@ -1323,6 +1387,9 @@ function renderViewer(pdbText) {
 
   viewer3d.zoomTo({ chain: 'L' });
   viewer3d.render();
+
+  // Re-apply the H-bond overlay for the freshly rebuilt model if it was toggled on
+  if (interShown) drawInteractions(activePose);
 
   // Resize after browser layout pass to ensure canvas fills the container
   setTimeout(() => { if (viewer3d) { viewer3d.resize(); viewer3d.render(); } }, 200);
@@ -1351,6 +1418,7 @@ function selectPose(n) {
   document.querySelectorAll('#posesGrid .pose-tile').forEach(t =>
     t.classList.toggle('active', Number(t.dataset.pose) === n));
   setViewerPoseLabel(n);
+  renderInteractions(n);
 }
 
 function setViewerPoseLabel(n) {
@@ -1403,6 +1471,281 @@ function takeSnapshot() {
   const a = document.createElement('a');
   a.href = url; a.download = 'docking-view.png';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+// ── Protein–ligand interaction analysis ────────────────
+// H-bond detection + mutation-site hints adapted from
+// jong-liu/protein-ligand-HB-interaction (client-side, chain-L aware).
+const HB_ELEMENTS = new Set(['N', 'O', 'S', 'F']);
+const HB_CUTOFF   = 3.6;   // Å, donor–acceptor heavy-atom distance
+const NEARBY_CUTOFF = 5.0; // Å, contact-residue definition
+const BACKBONE    = new Set(['N', 'CA', 'C', 'O', 'OXT']);
+const WATER_RES   = new Set(['HOH', 'WAT', 'H2O', 'DOD', 'TIP', 'SOL']);
+const AA_ONE = {
+  ALA:'A',ARG:'R',ASN:'N',ASP:'D',CYS:'C',GLN:'Q',GLU:'E',GLY:'G',HIS:'H',ILE:'I',
+  LEU:'L',LYS:'K',MET:'M',PHE:'F',PRO:'P',SER:'S',THR:'T',TRP:'W',TYR:'Y',VAL:'V',
+  HID:'H',HIE:'H',HIP:'H',CYX:'C',MSE:'M'
+};
+const MUTATION_HINTS = {
+  SER:'Ser→Ala 移除 -OH 破壞氫鍵；Ser→Thr 增加空間位阻',
+  THR:'Thr→Val 移除 -OH 消除氫鍵能力',
+  TYR:'Tyr→Phe 移除酚 -OH；Tyr→Trp 增大疏水接觸',
+  ASN:'Asn→Ala 移除醯胺基，破壞氫鍵網絡',
+  GLN:'Gln→Ala 縮短側鏈；Gln→Glu 引入負電荷',
+  ASP:'Asp→Asn 中和負電荷；Asp→Ala 移除羧基',
+  GLU:'Glu→Gln 中和負電荷；Glu→Ala 移除羧基',
+  HIS:'His→Ala 移除咪唑環；His→Phe 保留芳香環但去除氫鍵',
+  ARG:'Arg→Lys 縮短側鏈；Arg→Ala 移除胍基正電荷',
+  LYS:'Lys→Arg 維持正電荷改變幾何；Lys→Ala 移除正電荷',
+  CYS:'Cys→Ser 以 -OH 替換 -SH；Cys→Ala 移除極性基',
+  TRP:'Trp→Ala 移除吲哚環，影響氫鍵與π-π堆疊',
+  MET:'Met→Leu 移除硫原子；Met→Ala 大幅縮減側鏈',
+  PHE:'Phe→Ala 移除苯環；Phe→Tyr 引入 -OH 增加氫鍵',
+  LEU:'Leu→Ala 縮短疏水側鏈；Leu→Ile 改變分支位置',
+  ILE:'Ile→Val 縮短側鏈；Ile→Ala 大幅縮減',
+  VAL:'Val→Ala 縮減疏水接觸；Val→Ile 增加側鏈長度',
+  ALA:'Ala→Gly 增加骨架彈性；Ala→Val 增加位阻',
+  GLY:'Gly→Ala 引入 Cβ 限制骨架彈性',
+  PRO:'Pro→Ala 移除環狀限制；此位點常為結構關鍵點'
+};
+
+function parseComplexAtoms(text) {
+  const atoms = [];
+  for (const line of text.split('\n')) {
+    const rec = line.substring(0, 6).trim();
+    if (rec !== 'ATOM' && rec !== 'HETATM') continue;
+    const altLoc = line[16] || '';
+    if (altLoc && altLoc !== ' ' && altLoc !== 'A') continue;
+    let elem = line.substring(76, 78).trim();
+    if (!elem) {
+      const raw = line.substring(12, 16).trim();
+      elem = (raw.replace(/[0-9]/g, '')[0]) || 'X';
+    }
+    elem = elem.toUpperCase();
+    const x = parseFloat(line.substring(30, 38));
+    const y = parseFloat(line.substring(38, 46));
+    const z = parseFloat(line.substring(46, 54));
+    if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
+    atoms.push({
+      serial:  parseInt(line.substring(6, 11)) || 0,
+      name:    line.substring(12, 16).trim(),
+      resName: line.substring(17, 20).trim(),
+      chain:   line.substring(21, 22).trim() || 'A',
+      resSeq:  parseInt(line.substring(22, 26)) || 0,
+      x, y, z, element: elem
+    });
+  }
+  return atoms;
+}
+
+function _dist3(a, b) {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
+}
+
+// Ligand = chain L; protein = any other (non-water) chain.
+function findHBonds(atoms) {
+  const lig  = atoms.filter(a => a.chain === 'L' && HB_ELEMENTS.has(a.element));
+  const prot = atoms.filter(a => a.chain !== 'L' && !WATER_RES.has(a.resName) && HB_ELEMENTS.has(a.element));
+  const best = new Map();
+  for (const la of lig) for (const pa of prot) {
+    const d = _dist3(la, pa);
+    if (d > HB_CUTOFF) continue;
+    const key = la.serial + '_' + pa.chain + pa.resSeq;
+    if (!best.has(key) || d < best.get(key).d) best.set(key, { la, pa, d });
+  }
+  return Array.from(best.values()).sort((a, b) => a.d - b.d).map(({ la, pa, d }) => ({
+    ligAtom: la.name, ligElem: la.element, ligSerial: la.serial, ligResName: la.resName,
+    protAtom: pa.name, protElem: pa.element, protResName: pa.resName,
+    protChain: pa.chain, protResSeq: pa.resSeq, protOne: AA_ONE[pa.resName] || '?',
+    distance: +d.toFixed(3), ligXYZ: [la.x, la.y, la.z], protXYZ: [pa.x, pa.y, pa.z]
+  }));
+}
+
+function findNearby(atoms, cutoff = NEARBY_CUTOFF) {
+  const lig  = atoms.filter(a => a.chain === 'L');
+  const prot = atoms.filter(a => a.chain !== 'L' && !WATER_RES.has(a.resName));
+  const best = new Map();
+  for (const la of lig) for (const pa of prot) {
+    const d = _dist3(la, pa);
+    if (d > cutoff) continue;
+    const key = pa.chain + '_' + pa.resSeq + '_' + pa.resName;
+    if (!best.has(key) || d < best.get(key).minDist)
+      best.set(key, { chain: pa.chain, resSeq: pa.resSeq, resName: pa.resName,
+                      one: AA_ONE[pa.resName] || '?', minDist: +d.toFixed(3) });
+  }
+  return Array.from(best.values()).sort((a, b) => a.minDist - b.minDist);
+}
+
+// Analyse a pose's complex once, cache the result.
+function analyzePose(pose) {
+  if (poseInteractions[pose]) return poseInteractions[pose];
+  const pdb = posePDBs[pose];
+  if (!pdb) return null;
+  const atoms = parseComplexAtoms(pdb);
+  const res = { hbonds: findHBonds(atoms), nearby: findNearby(atoms) };
+  poseInteractions[pose] = res;
+  return res;
+}
+
+function hbClass(d) {
+  if (d <= 2.5) return ['hb-strong', '強'];
+  if (d <= 3.2) return ['hb-medium', '中'];
+  return ['hb-weak', '弱'];
+}
+
+// ── Interaction results panel ──────────────────────────
+function renderInteractions(pose) {
+  const panel = document.getElementById('interPanel');
+  const btn   = document.getElementById('interBtn');
+  const data  = analyzePose(pose);
+  if (!data) { panel.hidden = true; if (btn) btn.style.display = 'none'; return; }
+
+  const { hbonds, nearby } = data;
+  if (btn) btn.style.display = '';   // complex loaded → allow toggling the overlay
+
+  const hbKeys  = new Set(hbonds.map(h => h.protChain + '_' + h.protResSeq));
+  const scHbond = hbonds.filter(h => !BACKBONE.has(h.protAtom));
+  const scKeys  = new Set(scHbond.map(h => h.protChain + '_' + h.protResSeq));
+  const nMut    = scKeys.size;
+
+  panel.innerHTML = `
+    <h3>⚡ Protein–ligand interactions</h3>
+    <div class="inter-summary">
+      <strong>${hbonds.length}</strong> hydrogen bond(s)
+      · <strong>${nearby.length}</strong> contact residue(s) (≤${NEARBY_CUTOFF} Å)
+      · <strong>${nMut}</strong> mutation hotspot(s)
+      &nbsp;<span style="font-size:11px">(D–A ≤ ${HB_CUTOFF} Å)</span>
+    </div>
+    ${renderHBondTableHTML(hbonds)}
+    ${nMut || nearby.length ? '<div class="inter-sub">🧪 Mutation-site suggestions</div>' + renderMutationsHTML(hbonds, nearby, scHbond, scKeys, hbKeys) : ''}
+    ${nearby.length ? '<div class="inter-sub">🔍 Contact residues (≤' + NEARBY_CUTOFF + ' Å) — click to highlight</div>' + renderNearbyHTML(hbonds, nearby, hbKeys) : ''}
+    <div class="inter-credit">H-bond analysis adapted from
+      <a href="https://github.com/jong-liu/protein-ligand-HB-interaction" target="_blank"
+         rel="noopener" style="color:var(--accent)">jong-liu/protein-ligand-HB-interaction</a></div>`;
+  panel.hidden = false;
+}
+
+function renderHBondTableHTML(hbonds) {
+  if (!hbonds.length)
+    return `<p style="font-size:12px;color:var(--muted);margin:4px 0">No hydrogen bonds detected within ${HB_CUTOFF} Å for this pose.</p>`;
+  const rows = hbonds.map(hb => {
+    const [cls, label] = hbClass(hb.distance);
+    return `<tr>
+      <td><span class="atom-tag">${hb.ligResName}:${hb.ligAtom}</span> <span style="color:var(--muted)">(${hb.ligElem})</span></td>
+      <td><strong>${hb.protResName}${hb.protResSeq}</strong> <span style="color:var(--muted);font-size:11px">Ch.${hb.protChain}</span></td>
+      <td><span class="atom-tag">${hb.protAtom}</span> <span style="color:var(--muted)">(${hb.protElem})</span></td>
+      <td><span class="dist-pill ${cls}">${hb.distance.toFixed(2)} Å</span></td>
+      <td style="color:var(--muted)">${label}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto"><table class="hb-table">
+    <thead><tr><th>Ligand atom</th><th>Residue</th><th>Protein atom</th><th>Distance</th><th>Type</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function renderMutationsHTML(hbonds, nearby, scHbond, scKeys, hbKeys) {
+  let html = '';
+  // High priority: side-chain H-bond residues (shortest per residue)
+  const uniq = new Map();
+  for (const hb of scHbond) {
+    const k = hb.protChain + '_' + hb.protResSeq;
+    if (!uniq.has(k) || hb.distance < uniq.get(k).distance) uniq.set(k, hb);
+  }
+  for (const hb of uniq.values()) {
+    const hint = MUTATION_HINTS[hb.protResName] || `${hb.protResName}→Ala 移除側鏈功能基`;
+    html += `<div class="mut-item priority-high">
+      <div class="mut-header">
+        <span class="mut-resname">${hb.protResName}${hb.protResSeq}
+          <span style="font-size:11px;color:var(--muted)">(Ch.${hb.protChain})</span>
+          <span class="mut-dist">${hb.distance.toFixed(2)} Å</span></span>
+        <span class="priority-badge badge-high">高優先</span>
+      </div>
+      <div class="mut-role">Side-chain 氫鍵（原子：<strong>${hb.protAtom}</strong>）</div>
+      <div class="mut-sugg">💡 ${hint}</div></div>`;
+  }
+  // Medium priority: nearby residues without a side-chain H-bond
+  let count = 0;
+  for (const r of nearby) {
+    const k = r.chain + '_' + r.resSeq;
+    if (scKeys.has(k)) continue;
+    if (++count > 8) break;
+    const hint = MUTATION_HINTS[r.resName] || `${r.resName}→Ala 探索空間效應`;
+    const bbOnly = hbKeys.has(k) && !scKeys.has(k);
+    const role = bbOnly
+      ? `近鄰殘基（${r.minDist.toFixed(2)} Å，僅 backbone 氫鍵 — 突變不影響此鍵）`
+      : `近鄰殘基（${r.minDist.toFixed(2)} Å，無直接氫鍵）`;
+    html += `<div class="mut-item priority-mid">
+      <div class="mut-header">
+        <span class="mut-resname">${r.resName}${r.resSeq}
+          <span style="font-size:11px;color:var(--muted)">(Ch.${r.chain})</span></span>
+        <span class="priority-badge badge-mid">中優先</span>
+      </div>
+      <div class="mut-role">${role}</div>
+      <div class="mut-sugg">💡 ${hint}</div></div>`;
+  }
+  return `<div class="mut-grid">${html || '<p style="font-size:12px;color:var(--muted)">No data</p>'}</div>`;
+}
+
+function renderNearbyHTML(hbonds, nearby, hbKeys) {
+  const chips = nearby.map(r => {
+    const isHB = hbKeys.has(r.chain + '_' + r.resSeq);
+    const cls  = isHB ? 'chip chip-hb' : 'chip chip-contact';
+    const t    = isHB ? `H-bond residue · ${r.minDist} Å` : `contact · ${r.minDist} Å`;
+    return `<span class="${cls}" title="${t}" onclick="highlightResidue('${r.chain}',${r.resSeq})">${r.resName}${r.resSeq}${isHB ? ' ⚡' : ''}</span>`;
+  }).join('');
+  return `<div class="res-chips">${chips}</div>`;
+}
+
+function highlightResidue(chain, resSeq) {
+  if (!viewer3d) return;
+  viewer3d.addStyle({ chain, resi: resSeq }, { stick: { colorscheme: 'greenCarbon', radius: 0.2 } });
+  viewer3d.zoomTo({ chain, resi: resSeq }, 500);
+  viewer3d.render();
+}
+
+// ── Viewer H-bond overlay ──────────────────────────────
+function drawInteractions(pose) {
+  if (!viewer3d) return;
+  const data = analyzePose(pose);
+  if (!data) return;
+  const legend = document.getElementById('legendHB');
+  for (const hb of data.hbonds) {
+    viewer3d.addCylinder({
+      start: { x: hb.ligXYZ[0], y: hb.ligXYZ[1], z: hb.ligXYZ[2] },
+      end:   { x: hb.protXYZ[0], y: hb.protXYZ[1], z: hb.protXYZ[2] },
+      radius: 0.07, color: '#facc15', dashed: true, fromCap: 2, toCap: 2
+    });
+  }
+  const seen = new Set();
+  for (const hb of data.hbonds) {
+    const k = hb.protChain + hb.protResSeq;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    viewer3d.addLabel(`${hb.protResName}${hb.protResSeq}\n${hb.distance.toFixed(2)}Å`, {
+      position: { x: hb.protXYZ[0], y: hb.protXYZ[1], z: hb.protXYZ[2] },
+      backgroundColor: 'rgba(194,65,12,0.92)', fontColor: '#fff', fontSize: 11,
+      borderRadius: 3, padding: 3
+    });
+  }
+  if (legend) legend.style.display = data.hbonds.length ? '' : 'none';
+  viewer3d.render();
+}
+
+function clearInteractions() {
+  if (!viewer3d) return;
+  try { viewer3d.removeAllShapes(); } catch (_) {}
+  try { viewer3d.removeAllLabels(); } catch (_) {}
+  const legend = document.getElementById('legendHB');
+  if (legend) legend.style.display = 'none';
+  viewer3d.render();
+}
+
+function toggleInteractions() {
+  interShown = !interShown;
+  const btn = document.getElementById('interBtn');
+  if (btn) btn.classList.toggle('active', interShown);
+  if (interShown) drawInteractions(activePose);
+  else clearInteractions();
 }
 
 // ── Timeline renderer ──────────────────────────────────
