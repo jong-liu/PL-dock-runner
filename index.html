@@ -583,7 +583,7 @@
       </div>
       <div class="method-note" id="methodNote">
         <strong>Interpreting these scores (initial screening):</strong><br>
-        • <strong>Click any of the first 9 pose tiles</strong> to show that pose in the 3D viewer (Pose 1 ★ = highest CNN pose score = most likely true binding mode).<br>
+        • <strong>Click any pose tile</strong> to show that pose in the 3D viewer (Pose 1 ★ = highest CNN pose score = most likely true binding mode).<br>
         • <strong>Compare binding strength</strong> → prefer <em>CNN affinity</em> (Pose 1) or the most negative Vina affinity across all poses.
       </div>
       <div class="poses-grid" id="posesGrid"></div>
@@ -724,10 +724,9 @@ let poseBestCnn    = null; // pose index with the highest CNN pose score
 let poseBestVina   = null; // pose index with the most negative Vina affinity
 let currentJobTag  = '';   // "<pdb>_<ligand>" for the CSV filename
 let scoreTableOpen = false; // Pose-score table collapsed by default (click to expand)
-let poseTotalCount = 0;    // total poses docked (table is capped at the first 9)
+let poseTotalCount = 0;    // total poses docked (every pose is listed and clickable)
 let currentPoseLabel = ''; // "Pose N" or hit name of the pose shown in the viewer/interactions
 let interOpen = { hb: false, mut: false, contact: false }; // interaction sub-sections, collapsed by default
-const MAX_CLICKABLE_POSES = 9;   // only the first 9 pose tiles switch the viewer
 let interShown       = false; // H-bond overlay toggle (persists across pose switches)
 let poseInteractions = {};    // {pose: {hbonds, nearby}} — analysed lazily, cached
 
@@ -1381,7 +1380,7 @@ function displayScoresFromSummary(summary) {
   const grid = document.getElementById('posesGrid');
   grid.innerHTML = scores.map((s, i) => {
     const pose = i + 1;
-    const clickable = pose <= MAX_CLICKABLE_POSES && posePDBs[pose];
+    const clickable = !!posePDBs[pose];   // every pose with a cached complex is clickable
     let cls = '';
     if (i === 0) cls = 'best-cnn';
     else if (bestVinaP && pose === bestVinaP) cls = 'best-vina';
@@ -1398,10 +1397,9 @@ function displayScoresFromSummary(summary) {
             </div>`;
   }).join('');
 
-  // Per-pose score rows (CNN pose score · CNN affinity · Vina affinity)
-  // Cap at the first MAX_CLICKABLE_POSES even when num_modes requests more.
+  // Per-pose score rows (CNN pose score · CNN affinity · Vina affinity) — one per docked pose
   poseTotalCount = scores.length;
-  poseScoreRows = scores.slice(0, MAX_CLICKABLE_POSES).map((s, i) => {
+  poseScoreRows = scores.map((s, i) => {
     const p = poses[i] || {};
     const vina = (p.vina != null) ? p.vina : s;
     return {
@@ -1420,7 +1418,7 @@ function displayScores(scores) {
   const grid = document.getElementById('posesGrid');
   grid.innerHTML = scores.map((s, i) => {
     const pose = i + 1;
-    const clickable = pose <= MAX_CLICKABLE_POSES && posePDBs[pose];
+    const clickable = !!posePDBs[pose];   // every pose with a cached complex is clickable
     let cls = i === 0 ? 'best-cnn' : '';
     if (clickable) cls += ' clickable';
     if (pose === activePose) cls += ' active';
@@ -1431,9 +1429,9 @@ function displayScores(scores) {
      </div>`;
   }).join('');
 
-  // Vina-only fallback: no CNN columns available (capped at the first 9 poses)
+  // Vina-only fallback: no CNN columns available — one row per docked pose
   poseTotalCount = scores.length;
-  poseScoreRows = scores.slice(0, MAX_CLICKABLE_POSES).map((s, i) => ({
+  poseScoreRows = scores.map((s, i) => ({
     pose: i + 1,
     vina: (s != null && !isNaN(s)) ? s : null,
     cnn_score: null, cnn_affinity: null,
