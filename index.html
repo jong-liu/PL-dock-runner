@@ -1826,7 +1826,7 @@ function renderInteractions(pose) {
     </div>
     ${renderHBondTableHTML(hbonds)}
     ${nMut || nearby.length ? '<div class="inter-sub">🧪 Mutation-site suggestions' + poseBadge + '</div>' + renderMutationsHTML(hbonds, nearby, scHbond, scKeys, hbKeys) : ''}
-    ${nearby.length ? '<div class="inter-sub">🔍 Contact residues (≤' + NEARBY_CUTOFF + ' Å) — click to highlight</div>' + renderNearbyHTML(hbonds, nearby, hbKeys) : ''}
+    ${nearby.length ? '<div class="inter-sub">🔍 Contact residues (≤' + NEARBY_CUTOFF + ' Å) — click to highlight' + poseBadge + '</div>' + renderNearbyHTML(hbonds, nearby, hbKeys) : ''}
     <div class="inter-credit">H-bond analysis adapted from
       <a href="https://github.com/jong-liu/protein-ligand-HB-interaction" target="_blank"
          rel="noopener" style="color:var(--accent)">jong-liu/protein-ligand-HB-interaction</a></div>`;
