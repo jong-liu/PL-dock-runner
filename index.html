@@ -256,6 +256,22 @@
   .mark-vina { background: color-mix(in srgb, #bf8700 20%, transparent); color: #9a6700; }
   .score-legend { font-size: 10.5px; color: var(--muted); margin: 8px 0 0; display: flex;
                   flex-wrap: wrap; gap: 12px; }
+  /* CNN vs Vina explainer (collapsible, under the score table) */
+  .cnnvina { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .cnnvina-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                  cursor: pointer; user-select: none; }
+  .cnnvina-head:hover .ch-title { color: var(--accent); }
+  .cnnvina-head.open .score-caret { transform: rotate(90deg); }
+  .cnnvina-head.open .collapse-hint { background: var(--muted); }
+  .cnnvina-body { margin-top: 11px; }
+  .cnnvina-body ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .cnnvina-body li { position: relative; padding-left: 26px; font-size: 12px; line-height: 1.55;
+                     color: var(--text); }
+  .cnnvina-body li .num { position: absolute; left: 0; top: 0; width: 18px; height: 18px;
+                          display: inline-flex; align-items: center; justify-content: center;
+                          font-family: monospace; font-size: 10.5px; font-weight: 700; color: #fff;
+                          background: var(--accent); border-radius: 50%; }
+  .cnnvina-body li b { color: var(--primary); font-weight: 600; }
 
   /* 3D viewer */
   .viewer-wrap { position: relative; height: 480px; border-radius: 8px; overflow: hidden;
@@ -724,6 +740,7 @@ let poseBestCnn    = null; // pose index with the highest CNN pose score
 let poseBestVina   = null; // pose index with the most negative Vina affinity
 let currentJobTag  = '';   // "<pdb>_<ligand>" for the CSV filename
 let scoreTableOpen = false; // Pose-score table collapsed by default (click to expand)
+let cnnVinaOpen    = false; // "CNN vs Vina" explainer collapsed by default
 let poseTotalCount = 0;    // total poses docked (every pose is listed and clickable)
 let currentPoseLabel = ''; // "Pose N" or hit name of the pose shown in the viewer/interactions
 let interOpen = { hb: false, mut: false, contact: false }; // interaction sub-sections, collapsed by default
@@ -1130,6 +1147,7 @@ async function showResults(jobData) {
   interShown = false;
   poseScoreRows = []; poseBestCnn = null; poseBestVina = null; poseTotalCount = 0;
   scoreTableOpen = false;   // collapsed by default — click the header to expand
+  cnnVinaOpen = false;
   interOpen = { hb: false, mut: false, contact: false };  // interaction sections collapsed per job
   currentJobTag = [jobData.pdb_id, jobData.ligand].filter(Boolean).join('_') || currentJobId || 'job';
   document.getElementById('scorePanel').hidden = true;
@@ -1777,8 +1795,34 @@ function renderPoseScoreTable() {
         <span><span class="best-mark mark-vina">◆ best</span> most negative Vina affinity (strongest predicted binding)</span>
         ${hasCNN ? '' : '<span>CNN scores unavailable — Vina-only (CPU fallback) run.</span>'}
       </div>
+      <div class="cnnvina">
+        <div class="cnnvina-head${cnnVinaOpen ? ' open' : ''}" onclick="toggleCnnVina(this)">
+          <span class="ch-title"><span class="score-caret">▶</span> ℹ️ CNN vs Vina — what the scores mean</span>
+          <span class="collapse-hint">${cnnVinaOpen ? 'Hide ▲' : 'Learn more ▾'}</span>
+        </div>
+        <div id="cnnVinaBody" class="cnnvina-body"${cnnVinaOpen ? '' : ' hidden'}>
+          <ol>
+            <li><span class="num">1</span><b>They measure different things.</b> Vina affinity is a physics/empirical estimate of binding free energy (kcal/mol, <b>more negative = stronger</b>). CNN pose score is a deep-learning probability that a pose is the correct binding mode (0–1, <b>higher = more reliable</b>). CNN affinity is a learned binding strength (pK-like, <b>higher = stronger</b>).</li>
+            <li><span class="num">2</span><b>They do different jobs.</b> Use the CNN pose score to pick the correct binding mode (which pose), and Vina / CNN affinity to compare binding strength (ranking). That is why Pose 1 (CNN-best pose) and the most-negative Vina affinity are highlighted separately.</li>
+            <li><span class="num">3</span><b>They differ in nature.</b> Vina is empirical — transparent, fast and interpretable. CNN is data-driven (learned from many crystal complexes) — it can capture interactions empirical functions miss, but may carry training-set bias and generalize less reliably to unusual targets or novel scaffolds.</li>
+            <li><span class="num">4</span><b>Don't mix the scales.</b> Vina is more-negative-is-better with real kcal/mol meaning; CNN scores are higher-is-better and unitless (a probability or pK). They are not the same scale, and CNN scores cannot be read as kcal/mol.</li>
+            <li><span class="num">5</span><b>The value is consensus.</b> When both agree, trust the result more; when they disagree (e.g. good Vina but low CNN pose score), treat the pose with caution and inspect it manually. Both are initial screening only — validate further with MD / MM-PBSA or experiment.</li>
+          </ol>
+        </div>
+      </div>
     </div>`;
   panel.hidden = false;
+}
+
+function toggleCnnVina(head) {
+  cnnVinaOpen = !cnnVinaOpen;
+  const body = document.getElementById('cnnVinaBody');
+  if (body) body.hidden = !cnnVinaOpen;
+  if (head) {
+    head.classList.toggle('open', cnnVinaOpen);
+    const h = head.querySelector('.collapse-hint');
+    if (h) h.textContent = cnnVinaOpen ? 'Hide ▲' : 'Learn more ▾';
+  }
 }
 
 function togglePoseScoreTable() {
