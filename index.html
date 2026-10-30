@@ -215,6 +215,24 @@
   .chip-contact { color: var(--muted); }
   .inter-sub { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; }
   .inter-credit { font-size: 10.5px; color: var(--muted); margin: 12px 0 0; opacity: .8; }
+  /* Per-pose score table */
+  #scorePanel { margin: 18px 0 0; }
+  .score-panel-head { display: flex; align-items: center; justify-content: space-between;
+                      gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 0 0 8px; }
+  .score-panel-head h3 { font-size: 13px; font-weight: 600; color: var(--primary); margin: 0; }
+  .tbl-dl { font-size: 11.5px; font-weight: 600; color: var(--accent); background: none;
+            border: 1px solid var(--accent); border-radius: 6px; padding: 3px 10px; cursor: pointer;
+            white-space: nowrap; transition: background .12s; }
+  .tbl-dl:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .score-table td.num { font-variant-numeric: tabular-nums; }
+  .score-table tr.row-best-cnn  { background: color-mix(in srgb, #2E74B5 9%, transparent); }
+  .score-table tr.row-best-vina { background: color-mix(in srgb, #bf8700 10%, transparent); }
+  .best-mark { display: inline-block; font-size: 9.5px; font-weight: 700; padding: 1px 6px;
+               border-radius: 999px; margin-left: 5px; white-space: nowrap; vertical-align: middle; }
+  .mark-cnn  { background: color-mix(in srgb, #2E74B5 18%, transparent); color: #2E74B5; }
+  .mark-vina { background: color-mix(in srgb, #bf8700 20%, transparent); color: #9a6700; }
+  .score-legend { font-size: 10.5px; color: var(--muted); margin: 8px 0 0; display: flex;
+                  flex-wrap: wrap; gap: 12px; }
 
   /* 3D viewer */
   .viewer-wrap { position: relative; height: 480px; border-radius: 8px; overflow: hidden;
@@ -548,6 +566,9 @@
       <div class="poses-grid" id="posesGrid"></div>
       <div id="screenResults" hidden></div>
 
+      <!-- Per-pose score table (CNN pose score · CNN affinity · Vina affinity) + CSV download -->
+      <div id="scorePanel" hidden></div>
+
       <!-- Protein–ligand interaction analysis (H-bonds + mutation hotspots) -->
       <div id="interPanel" hidden></div>
 
@@ -675,6 +696,10 @@ let spinning     = false;
 let posePDBs     = {};   // {poseIndex: complex PDB text} extracted from results ZIP
 let activePose   = 1;    // pose currently shown in the 3D viewer
 let _screenSkipped = []; // skipped library entries for the current screen job
+let poseScoreRows  = [];   // [{pose, vina, cnn_score, cnn_affinity}] for the score table + CSV
+let poseBestCnn    = null; // pose index with the highest CNN pose score
+let poseBestVina   = null; // pose index with the most negative Vina affinity
+let currentJobTag  = '';   // "<pdb>_<ligand>" for the CSV filename
 const MAX_CLICKABLE_POSES = 9;   // only the first 9 pose tiles switch the viewer
 let interShown       = false; // H-bond overlay toggle (persists across pose switches)
 let poseInteractions = {};    // {pose: {hbonds, nearby}} — analysed lazily, cached
@@ -1077,6 +1102,9 @@ async function showResults(jobData) {
   activePose = 1;
   poseInteractions = {};
   interShown = false;
+  poseScoreRows = []; poseBestCnn = null; poseBestVina = null;
+  currentJobTag = [jobData.pdb_id, jobData.ligand].filter(Boolean).join('_') || currentJobId || 'job';
+  document.getElementById('scorePanel').hidden = true;
   document.getElementById('interPanel').hidden = true;
   const _ib = document.getElementById('interBtn');
   if (_ib) { _ib.style.display = 'none'; _ib.classList.remove('active'); }
@@ -1338,6 +1366,19 @@ function displayScoresFromSummary(summary) {
               <div class="ps">${s.toFixed(2)}</div>
             </div>`;
   }).join('');
+
+  // Per-pose score rows (CNN pose score · CNN affinity · Vina affinity)
+  poseScoreRows = scores.map((s, i) => {
+    const p = poses[i] || {};
+    const vina = (p.vina != null) ? p.vina : s;
+    return {
+      pose: i + 1,
+      vina: (vina != null && !isNaN(vina)) ? vina : null,
+      cnn_score:    (p.cnn_score    != null) ? p.cnn_score    : null,
+      cnn_affinity: (p.cnn_affinity != null) ? p.cnn_affinity : null,
+    };
+  });
+  renderPoseScoreTable();
 }
 
 function displayScores(scores) {
@@ -1356,6 +1397,14 @@ function displayScores(scores) {
        <div class="ps">${s.toFixed(2)}</div>
      </div>`;
   }).join('');
+
+  // Vina-only fallback: no CNN columns available
+  poseScoreRows = scores.map((s, i) => ({
+    pose: i + 1,
+    vina: (s != null && !isNaN(s)) ? s : null,
+    cnn_score: null, cnn_affinity: null,
+  }));
+  renderPoseScoreTable();
 }
 
 // ── Direct ZIP download ────────────────────────────────
@@ -1642,6 +1691,78 @@ function hbClass(d) {
 }
 
 // ── Interaction results panel ──────────────────────────
+// ── Per-pose score table (CNN pose score · CNN affinity · Vina affinity) ──
+function renderPoseScoreTable() {
+  const panel = document.getElementById('scorePanel');
+  if (!poseScoreRows.length) { panel.hidden = true; return; }
+
+  const hasCNN = poseScoreRows.some(r => r.cnn_score != null);
+
+  // Highest CNN pose score (higher = better) and most negative Vina affinity
+  poseBestCnn = null; poseBestVina = null;
+  let maxCnn = -Infinity, minVina = Infinity;
+  for (const r of poseScoreRows) {
+    if (r.cnn_score != null && r.cnn_score > maxCnn) { maxCnn = r.cnn_score; poseBestCnn = r.pose; }
+    if (r.vina != null && r.vina < minVina) { minVina = r.vina; poseBestVina = r.pose; }
+  }
+
+  const fmt = (v, d) => (v == null || isNaN(v)) ? '—' : v.toFixed(d);
+  const rows = poseScoreRows.map(r => {
+    const isCnn  = r.pose === poseBestCnn;
+    const isVina = r.pose === poseBestVina;
+    let cls = '';
+    if (isCnn)  cls += ' row-best-cnn';
+    if (isVina) cls += ' row-best-vina';
+    const cnnMark  = isCnn  ? ' <span class="best-mark mark-cnn">★ best</span>' : '';
+    const vinaMark = isVina ? ' <span class="best-mark mark-vina">◆ best</span>' : '';
+    return `<tr class="${cls.trim()}">
+      <td><strong>Pose ${r.pose}</strong></td>
+      <td class="num">${fmt(r.cnn_score, 3)}${cnnMark}</td>
+      <td class="num">${fmt(r.cnn_affinity, 2)}</td>
+      <td class="num">${fmt(r.vina, 2)}${vinaMark}</td>
+    </tr>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="score-panel-head">
+      <h3>📊 Pose scores</h3>
+      <button class="tbl-dl" onclick="downloadScoreCSV()">⬇ Download table (CSV)</button>
+    </div>
+    <div style="overflow-x:auto"><table class="hb-table score-table">
+      <thead><tr>
+        <th>Pose</th><th>CNN pose score</th><th>CNN affinity<br><span style="font-weight:400">(kcal/mol)</span></th>
+        <th>Vina affinity<br><span style="font-weight:400">(kcal/mol)</span></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="score-legend">
+      <span><span class="best-mark mark-cnn">★ best</span> highest CNN pose score (most likely true binding mode)</span>
+      <span><span class="best-mark mark-vina">◆ best</span> most negative Vina affinity (strongest predicted binding)</span>
+      ${hasCNN ? '' : '<span>CNN scores unavailable — Vina-only (CPU fallback) run.</span>'}
+    </div>`;
+  panel.hidden = false;
+}
+
+function downloadScoreCSV() {
+  if (!poseScoreRows.length) return;
+  const esc = v => (v == null || isNaN(v)) ? '' : v;
+  const lines = ['Pose,CNN pose score,CNN affinity (kcal/mol),Vina affinity (kcal/mol),Note'];
+  for (const r of poseScoreRows) {
+    const notes = [];
+    if (r.pose === poseBestCnn)  notes.push('highest CNN pose score');
+    if (r.pose === poseBestVina) notes.push('most negative Vina affinity');
+    lines.push([r.pose, esc(r.cnn_score), esc(r.cnn_affinity), esc(r.vina),
+                `"${notes.join('; ')}"`].join(','));
+  }
+  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(currentJobTag || 'job').replace(/[^\w.-]+/g, '_')}_pose_scores.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function renderInteractions(pose) {
   const panel = document.getElementById('interPanel');
   const btn   = document.getElementById('interBtn');
