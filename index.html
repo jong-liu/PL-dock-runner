@@ -257,9 +257,11 @@
   .score-legend { font-size: 10.5px; color: var(--muted); margin: 8px 0 0; display: flex;
                   flex-wrap: wrap; gap: 12px; }
   /* CNN vs Vina explainer (collapsible, under the score table) */
-  .cnnvina { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .cnnvina { margin-top: 14px; }
   .cnnvina-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-                  cursor: pointer; user-select: none; }
+                  cursor: pointer; user-select: none;
+                  border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  .cnnvina-head .score-caret { color: #e6a817; }   /* yellow-orange caret */
   .cnnvina-head:hover .ch-title { color: var(--accent); }
   .cnnvina-head.open .score-caret { transform: rotate(90deg); }
   .cnnvina-head.open .collapse-hint { background: var(--muted); }
