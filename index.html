@@ -1874,7 +1874,7 @@ function renderInteractions(pose) {
 
   const poseBadge = currentPoseLabel
     ? ` <span class="inter-pose">Showing ${currentPoseLabel}</span>` : '';
-  const hint = o => `<span class="collapse-hint">${o ? '收合 ▲' : '點我展開 ▾'}</span>`;
+  const hint = o => `<span class="collapse-hint">${o ? 'Collapse ▲' : 'Expand ▾'}</span>`;
 
   const hasMut = nMut || nearby.length;
   panel.innerHTML = `
@@ -1915,7 +1915,7 @@ function toggleInterSec(which, head) {
   if (head) {
     head.classList.toggle('open', interOpen[which]);
     const h = head.querySelector('.collapse-hint');
-    if (h) h.textContent = interOpen[which] ? '收合 ▲' : '點我展開 ▾';
+    if (h) h.textContent = interOpen[which] ? 'Collapse ▲' : 'Expand ▾';
   }
 }
 
