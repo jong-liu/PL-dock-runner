@@ -5,9 +5,22 @@ served via GitHub Pages). The docking pipeline and backend API live in separate
 repositories. Entries are grouped by session date, newest first; the short hashes
 reference commits on `main`.
 
-_Last recorded: 2026-10-30._
+_Last recorded: 2026-10-30 19:21._
 
 ## 2026-10-30 — Results panel: per-pose scores + collapsible, pose-tagged interactions
+
+Explainer, dividers, and visual polish:
+
+- `8fba81d` Make the CNN-vs-Vina caret yellow-orange and move its divider below the header.
+- `7768897` Add a collapsible **"CNN vs Vina"** explainer (5 points) under the score table.
+- `5017a76` Point the H-bond credit link to the live GitHub Pages site.
+- `6166491` Use a single divider between interaction sub-sections (no double line).
+- `bc65ff7` Drop the divider between the interactions header and its summary line.
+- `107f7d5` Add top+bottom separators to the sub-section headers _(revised in `6166491`)_.
+- `54216f5` Make the collapsible carets ocean-blue and larger for visibility.
+- `0febfa5` Add this CHANGELOG recording the version history.
+
+Feature work:
 
 - `9726376` Show and make clickable **every docked pose**, not just the first 9
   (the pipeline already writes `complex_pose{i}.pdb` for all `num_modes` poses).
