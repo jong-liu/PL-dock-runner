@@ -215,6 +215,10 @@
   .chip-contact { color: var(--muted); }
   .inter-sub { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; }
   .inter-credit { font-size: 10.5px; color: var(--muted); margin: 12px 0 0; opacity: .8; }
+  .inter-pose { font-size: 11px; font-weight: 600; color: var(--accent);
+                background: color-mix(in srgb, var(--accent) 13%, transparent);
+                border-radius: 999px; padding: 1px 9px; margin-left: 8px; white-space: nowrap;
+                vertical-align: middle; }
   /* Per-pose score table */
   #scorePanel { margin: 18px 0 0; }
   .score-panel-head { display: flex; align-items: center; justify-content: space-between;
@@ -708,6 +712,7 @@ let poseBestVina   = null; // pose index with the most negative Vina affinity
 let currentJobTag  = '';   // "<pdb>_<ligand>" for the CSV filename
 let scoreTableOpen = false; // Pose-score table collapsed by default (click to expand)
 let poseTotalCount = 0;    // total poses docked (table is capped at the first 9)
+let currentPoseLabel = ''; // "Pose N" or hit name of the pose shown in the viewer/interactions
 const MAX_CLICKABLE_POSES = 9;   // only the first 9 pose tiles switch the viewer
 let interShown       = false; // H-bond overlay toggle (persists across pose switches)
 let poseInteractions = {};    // {pose: {hbonds, nearby}} — analysed lazily, cached
@@ -1127,6 +1132,7 @@ async function showResults(jobData) {
   document.getElementById('posesGrid').hidden = false;
   document.getElementById('screenResults').hidden = true;
   document.getElementById('viewerPoseLabel').textContent = '';
+  currentPoseLabel = '';
 
   // Show best score immediately from job metadata
   const bs = jobData.best_score;
@@ -1263,6 +1269,7 @@ function markActiveHit(rank) {
 function setViewerHitLabel(name) {
   const lbl = document.getElementById('viewerPoseLabel');
   if (lbl) lbl.textContent = name ? ` · ${name}` : '';
+  currentPoseLabel = name || '';
 }
 
 function showSkipped(e) {
@@ -1533,6 +1540,7 @@ function selectPose(n) {
 function setViewerPoseLabel(n) {
   const lbl = document.getElementById('viewerPoseLabel');
   if (lbl) lbl.textContent = ` · Showing Pose ${n}`;
+  currentPoseLabel = `Pose ${n}`;
 }
 
 function toggleSurface() {
@@ -1805,8 +1813,11 @@ function renderInteractions(pose) {
   const scKeys  = new Set(scHbond.map(h => h.protChain + '_' + h.protResSeq));
   const nMut    = scKeys.size;
 
+  const poseBadge = currentPoseLabel
+    ? ` <span class="inter-pose">Showing ${currentPoseLabel}</span>` : '';
+
   panel.innerHTML = `
-    <h3>⚡ Protein–ligand interactions</h3>
+    <h3>⚡ Protein–ligand interactions${poseBadge}</h3>
     <div class="inter-summary">
       <strong>${hbonds.length}</strong> hydrogen bond(s)
       · <strong>${nearby.length}</strong> contact residue(s) (≤${NEARBY_CUTOFF} Å)
@@ -1814,7 +1825,7 @@ function renderInteractions(pose) {
       &nbsp;<span style="font-size:11px">(D–A ≤ ${HB_CUTOFF} Å)</span>
     </div>
     ${renderHBondTableHTML(hbonds)}
-    ${nMut || nearby.length ? '<div class="inter-sub">🧪 Mutation-site suggestions</div>' + renderMutationsHTML(hbonds, nearby, scHbond, scKeys, hbKeys) : ''}
+    ${nMut || nearby.length ? '<div class="inter-sub">🧪 Mutation-site suggestions' + poseBadge + '</div>' + renderMutationsHTML(hbonds, nearby, scHbond, scKeys, hbKeys) : ''}
     ${nearby.length ? '<div class="inter-sub">🔍 Contact residues (≤' + NEARBY_CUTOFF + ' Å) — click to highlight</div>' + renderNearbyHTML(hbonds, nearby, hbKeys) : ''}
     <div class="inter-credit">H-bond analysis adapted from
       <a href="https://github.com/jong-liu/protein-ligand-HB-interaction" target="_blank"
