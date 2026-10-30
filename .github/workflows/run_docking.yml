@@ -13,8 +13,9 @@ on:
         required: true
         type: string
       ligand_resname:
-        description: 'Crystal ligand resname (e.g. 478, 1S6, ACO)'
-        required: true
+        description: 'Crystal ligand resname (single mode); optional pocket hint for screen'
+        required: false
+        default: ''
         type: string
       box_size:
         description: 'Grid box size in Å — 25 drug / 35 large ligand'
