@@ -5,9 +5,30 @@ served via GitHub Pages). The docking pipeline and backend API live in separate
 repositories. Entries are grouped by session date, newest first; the short hashes
 reference commits on `main`.
 
-_Last recorded: 2026-10-30 19:21._
+_Last recorded: 2026-10-31._
+
+## 2026-10-31 — Stuck "Running" jobs self-heal (backend)
+
+Backend only — `pyrx-web-backend`, a separate service that is **not under git**;
+recorded here so the project history stays in one place.
+
+- **My Jobs no longer stalls on "Running".** The jobs-list endpoint now lazily
+  reconciles any job that has a workflow run but no stored conclusion: it queries
+  GitHub once and writes the result back. A run that waits in the queue longer than
+  the 60-minute monitor window (e.g. behind a disconnected self-hosted runner) now
+  still resolves to Success/Failure on the next refresh. Completion recording was
+  factored into a shared helper (`_record_completion`) so the notification email
+  still fires exactly once.
+- One-off repair: reconciled the 5J5T virtual-screening job that was stuck
+  (run `41056960587` → success, best Vina −10.48, top hit 173476815).
 
 ## 2026-10-30 — Results panel: per-pose scores + collapsible, pose-tagged interactions
+
+Screening dispatch and wording:
+
+- `40e2f21` Use English **Expand ▾ / Collapse ▲** hints on the interaction sections.
+- `8f4c019` Make the workflow's `ligand_resname` optional so **virtual screening can
+  dispatch** — an empty value was previously rejected with HTTP 422.
 
 Explainer, dividers, and visual polish:
 
